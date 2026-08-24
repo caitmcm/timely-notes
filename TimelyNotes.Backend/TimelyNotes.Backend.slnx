@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="TimelyNotes.API.Tests/TimelyNotes.API.Tests.csproj" />
+  <Project Path="TimelyNotes.API/TimelyNotes.API.csproj" />
+</Solution>

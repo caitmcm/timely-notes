@@ -1,0 +1,15 @@
+@TimelyNotes.API_HostAddress = http://localhost:5186
+
+### List the notes for the 1-hourly Schedule
+GET {{TimelyNotes.API_HostAddress}}/api/schedules/s1/notes
+Accept: application/json
+
+### List the notes for the 3-hourly Schedule
+GET {{TimelyNotes.API_HostAddress}}/api/schedules/s3/notes
+Accept: application/json
+
+### List the notes for the 6-hourly Schedule
+GET {{TimelyNotes.API_HostAddress}}/api/schedules/s6/notes
+Accept: application/json
+
+###

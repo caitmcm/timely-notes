@@ -4,20 +4,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Workspace hierarchy
 
-The repo root is a plain folder (not a git repository yet) holding two independent projects plus the planning docs:
+The repo root holds two independent projects plus the planning docs:
 
 ```
 timely-notes/
 ├── CLAUDE.md                      # this file
+├── run-dev.ps1                    # starts the API (5186) and UI (5173) together
 ├── DESIGN DOCUMENT.MD             # domain model + goals (source of truth for "what")
 ├── TODO-<Slice>.MD                # the one slice currently being worked on (absent when idle)
 ├── done-docs/                     # completed TODO docs, kept as a record
-│   └── TODO-GetNotesBySchedule.MD
+│   ├── TODO-GetNotesBySchedule.MD
+│   └── TODO-FrontendSkeleton.MD
 ├── TimelyNotes.Backend/           # ASP.NET Core Web API (.NET 10) — its own solution
 └── timely-notes-ui/               # React + TypeScript frontend (Vite) — its own npm package
 ```
 
-The two projects are **not integrated**: there is no dev-server proxy, no `.env` pointing the UI at the API, and no shared build. There is also no root README and no CI config.
+The two projects are wired together only by a **Vite dev proxy** (`/api` → `http://localhost:5186`): there is no `.env`, no shared build, no root README and no CI config. Run both dev servers together with `./run-dev.ps1` from the repo root (PowerShell 7+; it fails fast if either default port is taken, and stops both on Ctrl+C), or start them separately with the per-project commands below.
 
 ## Planning docs and workflow
 
@@ -30,11 +32,11 @@ The two projects are **not integrated**: there is no dev-server proxy, no `.env`
 
 **Backend — one vertical slice complete.** `GET /api/schedules/{scheduleShortName}/notes` lists the notes for a Schedule (`s1`/`s3`/`s6`), served from an in-memory repository seeded with example data, with repository and endpoint tests. Nothing else exists: no create/get-by-id, no Schedule endpoints, no persistence, no auth.
 
-**Frontend — editor spike only, no test framework.** `src/App.tsx` renders a heading, a `NoteEditor` component wrapping MDXEditor, and a Save button that just `console.log`s the markdown. There is no router, state management, API client, or test framework, and nothing calls the backend yet. Per the TDD rule below, installing a test framework (e.g. Vitest + React Testing Library) is the prerequisite for the first real piece of frontend domain logic.
+**Frontend — the day schedule view slice is complete.** The app shows today split into periods by the selected Schedule, fetches that Schedule's notes from the backend through the Vite dev proxy, and opens both new and existing notes in a `NoteDialog` wrapping `NoteEditor`. Save still only `console.log`s the markdown — there is no create/update endpoint. There is no router and no state management library; the selected Schedule and period are React state in `App.tsx`. Vitest + React Testing Library are set up and the slice is covered by tests.
 
 ## Development approach
 
-We use **Test Driven Development** in both the API and the UI: write a failing test first, then the minimum code to pass it, then refactor. This applies to all new domain code (models, endpoints, components, hooks, etc.), not just bug fixes. The backend has xUnit set up; the frontend does not — don't write feature code ahead of the test setup.
+We use **Test Driven Development** in both the API and the UI: write a failing test first, then the minimum code to pass it, then refactor. This applies to all new domain code (models, endpoints, components, hooks, etc.), not just bug fixes. The backend has xUnit set up and the frontend has Vitest + React Testing Library.
 
 ## Code style
 
@@ -70,8 +72,17 @@ We use **Test Driven Development** in both the API and the UI: write a failing t
 - `npm run build` — type-check (`tsc -b`) and build (`vite build`)
 - `npm run lint` — ESLint (flat config in `eslint.config.js`; basic, non-type-aware rules)
 - `npm run preview` — preview a production build
+- `npm test` — Vitest once (`npm run test:watch` to watch). Config lives in `vite.config.ts` (`jsdom`, globals on, `src/test/setup.ts`), which also stubs `HTMLDialogElement.showModal`/`close` since jsdom doesn't implement them. Tests sit next to the code they cover as `*.test.ts(x)`.
 
-**Layout inside `src/`:** `main.tsx` (root render), `App.tsx` (current shell), `components/` (e.g. `NoteEditor.tsx`), `index.css` (minimal global styles — a `color-scheme` and a body margin reset; no design system yet).
+**`vite.config.ts` proxies `/api` to `http://localhost:5186`**, so the UI calls the backend same-origin and no CORS config is needed. Dev-only — there is no production API base URL yet.
+
+**Layout inside `src/`:** `main.tsx` (root render), `App.tsx` + `App.css` (shell and day-view styles), `types/` (shared `Note`/`Schedule`/`Period`/`SpanHours`), `domain/` (pure time logic — `schedules.ts`, `periods.ts`, `notes.ts`), `api/` (`notesApi.ts`, a `fetch` wrapper returning parsed `Note`s), `components/` (`SchedulePicker`, `ScheduleView`, `PeriodRow`, `NoteDialog`, `NoteEditor`), `index.css` (minimal global styles; no design system).
+
+**`App` owns the domain calls.** It runs `buildPeriods` then `assignNotes` in a `useMemo` and hands `ScheduleView` a finished `Period[]`; nothing below `App` calls the domain functions, so component tests pass in fixed periods. The selected period is stored as a **timestamp**, not a `Period` object — periods are rebuilt whenever the notes or the Schedule change, so a held reference goes stale.
+
+**Pass an `AbortSignal` to every API call** — `getNotesBySchedule` takes one as a required parameter, wired to the calling effect's cleanup. This is the frontend mirror of the backend's cancellation-token rule above.
+
+**Inject the clock, never read it in a component.** `App` and `ScheduleView` both take an optional `now` prop so tests are deterministic; `App` freezes it at mount.
 
 **Markdown editing uses `@mdxeditor/editor`.** `NoteEditor` is a `forwardRef` wrapper exposing `MDXEditorMethods` (so a parent reads the markdown via `ref.current.getMarkdown()`) and configures the plugin list and toolbar. Add editor features by extending that plugin list rather than dropping a second editor in. `@mdxeditor/editor/style.css` is imported inside the component.
 

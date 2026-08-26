@@ -6,6 +6,12 @@ namespace TimelyNotes.API.Repositories;
 /// Placeholder store holding notes in memory, seeded with example data. Registered as a singleton
 /// so the seeded state survives across requests.
 /// </summary>
+/// <remarks>
+/// The seed is anchored to local midnight <em>today</em> so the day view always has something to
+/// render. Because the singleton is built at startup, "today" is frozen when the process starts:
+/// a server left running across midnight keeps serving the previous day's notes. Acceptable for a
+/// dev-only seed — restart the API to re-anchor it.
+/// </remarks>
 public class InMemoryNoteRepository : INoteRepository
 {
     private readonly List<Note> _notes;
@@ -26,7 +32,7 @@ public class InMemoryNoteRepository : INoteRepository
 
     private static IEnumerable<Note> SeedNotes()
     {
-        var day = new DateTimeOffset(2026, 8, 24, 0, 0, 0, TimeSpan.Zero);
+        var day = new DateTimeOffset(DateTime.Today, DateTimeOffset.Now.Offset);
 
         yield return Seed("s1", day.AddHours(9), "# Stand-up\n\nBlocked on the notes endpoint.");
         yield return Seed("s1", day.AddHours(11), "Pairing on the repository abstraction.");

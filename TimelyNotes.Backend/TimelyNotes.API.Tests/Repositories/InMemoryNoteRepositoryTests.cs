@@ -51,4 +51,22 @@ public class InMemoryNoteRepositoryTests
         Assert.NotEqual(default, note.CreatedAt);
         Assert.NotEqual(default, note.ModifiedAt);
     }
+
+    [Theory]
+    [InlineData("s1")]
+    [InlineData("s3")]
+    [InlineData("s6")]
+    public async Task GetBySchedule_SeedsNotesAgainstToday(string scheduleShortName)
+    {
+        var repository = new InMemoryNoteRepository();
+
+        var notes = await repository.GetBySchedule(scheduleShortName, TestContext.Current.CancellationToken);
+
+        Assert.NotEmpty(notes);
+        Assert.All(notes, note =>
+        {
+            Assert.Equal(DateTime.Today, note.CreatedAt.LocalDateTime.Date);
+            Assert.Equal(DateTime.Today, note.ModifiedAt.LocalDateTime.Date);
+        });
+    }
 }

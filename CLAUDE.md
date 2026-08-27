@@ -11,10 +11,12 @@ timely-notes/
 ├── CLAUDE.md                      # this file
 ├── run-dev.ps1                    # starts the API (5186) and UI (5173) together
 ├── DESIGN DOCUMENT.MD             # domain model + goals (source of truth for "what")
-├── TODO-<Slice>.MD                # the one slice currently being worked on (absent when idle)
-├── done-docs/                     # completed TODO docs, kept as a record
-│   ├── TODO-GetNotesBySchedule.MD
-│   └── TODO-FrontendSkeleton.MD
+├── feature-docs/                  # how work is defined and recorded
+│   ├── WORKFLOW.MD                # the process — read before specifying or implementing
+│   ├── todo/                      # the feature specification being worked on
+│   └── done/                      # completed specifications, kept as a record
+│       ├── GetNotesBySchedule.MD
+│       └── FrontendSkeleton.MD
 ├── TimelyNotes.Backend/           # ASP.NET Core Web API (.NET 10) — its own solution
 └── timely-notes-ui/               # React + TypeScript frontend (Vite) — its own npm package
 ```
@@ -23,10 +25,14 @@ The two projects are wired together only by a **Vite dev proxy** (`/api` → `ht
 
 ## Planning docs and workflow
 
+**[`feature-docs/WORKFLOW.MD`](feature-docs/WORKFLOW.MD) is the process for this repo — read it before writing a feature specification or starting work on one.** The essentials:
+
 - **`DESIGN DOCUMENT.MD`** describes the domain model (Instance → Schedule → Note), the backend/frontend goals, and the open questions (persistence, auth, CI/CD). It is a statement of intent, not an implementation plan — consult it before designing anything new, and treat unresolved items there as genuinely undecided.
-- **Work happens one vertical slice at a time.** A slice gets its own `TODO-<SliceName>.MD` at the repo root, derived from the design document: goal, architecture notes, then a checklist ticked off as the work lands.
-- **When a slice is finished, its TODO doc moves into `done-docs/`** rather than being deleted — `done-docs/TODO-GetNotesBySchedule.MD` is the worked example of the format and level of detail expected.
-- Only outstanding TODO docs live at the root. If the root has no `TODO-*.MD`, the last slice is done and the next one needs planning from the design document before code is written.
+- **Work happens one feature at a time, and one document owns that feature end to end.** The specification is written in `feature-docs/todo/<FeatureName>.MD`: goal, scope decisions, architecture, a checklist, how to verify, and what is deferred. A feature may span both projects or sit inside one.
+- **The implementing agent ticks the boxes in that same file** as the work lands, and must satisfy every requirement in it. Per TDD, each item starts with a failing test.
+- **Implementation notes are appended to that same file** — never a second, prefixed document.
+- **When the feature is finished, the specification moves into `feature-docs/done/`** rather than being deleted. `feature-docs/done/GetNotesBySchedule.MD` and `feature-docs/done/FrontendSkeleton.MD` are the worked examples of the format and level of detail expected.
+- If `feature-docs/todo/` is empty, the last feature is done and the next one needs specifying from the design document before code is written.
 
 ## Current state
 

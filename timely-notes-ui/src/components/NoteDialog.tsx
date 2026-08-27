@@ -14,9 +14,9 @@ interface NoteDialogProps {
 }
 
 /**
- * The note editor in a native modal `<dialog>`. New and existing notes share one editable view —
- * notes are write-once per the design doc, but nothing can be written yet, so a read-only view
- * belongs with the create/update slice.
+ * The note editor in a native modal `<dialog>`. New and existing notes share one editable view,
+ * which is what the design doc asks for: a note's content stays editable after creation, and only
+ * its `occursAt` slot is fixed. Nothing is persisted yet — that arrives with the create/update slice.
  */
 function NoteDialog({ period, note, onSave, onClose }: NoteDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)

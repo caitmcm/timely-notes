@@ -2,12 +2,12 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import App from './App'
 
-/** 20:20 on 25/08/2026 — the instant the mockup is drawn at. */
+/** The instant the mockup is drawn at. */
 const now = new Date(2026, 7, 25, 20, 20)
 
 const iso = (hour: number, minute = 0) => new Date(2026, 7, 25, hour, minute).toISOString()
 
-/** The write time is a different day throughout: only `occursAt` decides where a note lands. */
+/** `createdAt` is a different day throughout: only `occursAt` decides where a note lands. */
 const writtenAt = new Date(2026, 7, 28, 9, 12).toISOString()
 
 const wireNote = (id: string, hour: number, content: string) => ({
@@ -18,7 +18,7 @@ const wireNote = (id: string, hour: number, content: string) => ({
   modifiedAt: writtenAt,
 })
 
-/** The API answers newest-first, so the fixtures do too. */
+/** Newest-first, as the API answers. */
 const s3Notes = [
   wireNote('s3-afternoon', 15, 'Afternoon block: wired up FastEndpoints.'),
   wireNote('s3-morning', 9, 'Morning block: drafted the TDD plan.'),
@@ -85,7 +85,7 @@ describe('App', () => {
 
     const morning = await screen.findByRole('option', { name: '09:00 – 12:00' })
 
-    // The fixtures' createdAt is 28/08 09:12; the row shows the 09:00 slot it occurs in.
+    // Fixture createdAt is 28/08 09:12; the row must show the 09:00 slot instead.
     expect(morning).toContainElement(screen.getByRole('button', { name: /^09:00 Morning block/ }))
   })
 

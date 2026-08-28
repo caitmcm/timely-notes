@@ -3,13 +3,9 @@ using FluentValidation;
 
 namespace TimelyNotes.API.Endpoints.Notes;
 
-/// <summary>
-/// Rejects a window the endpoint will not serve. Both parameters are required — an omitted one is a
-/// 400, never an implicit "just today".
-/// </summary>
 public class GetNotesByScheduleValidator : Validator<GetNotesByScheduleRequest>
 {
-    /// <summary>The widest window a single request may ask for. The number lives only here.</summary>
+    /// <summary>Widest window one request may ask for; the number lives only here.</summary>
     public static readonly TimeSpan MaximumRange = TimeSpan.FromDays(7);
 
     private const string InstantFormat =

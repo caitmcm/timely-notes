@@ -8,7 +8,7 @@ builder.Services
     .AddFastEndpoints()
     .SwaggerDocument();
 
-// Singleton: the in-memory store's seeded state has to survive across requests.
+// Singleton so the in-memory seed survives across requests.
 builder.Services.AddSingleton<INoteRepository, InMemoryNoteRepository>();
 
 var app = builder.Build();
@@ -24,5 +24,5 @@ if (app.Environment.IsDevelopment())
 
 app.Run();
 
-// Exposed so the test project can spin the API up in-process.
+// Exposed for in-process tests.
 public partial class Program;

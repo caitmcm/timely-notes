@@ -10,10 +10,10 @@ import {
   nextDay,
 } from './periods'
 
-/** 25/08/2026, the date the mockup is drawn against. */
+/** The date the mockup is drawn against. */
 const day = new Date(2026, 7, 25)
 
-/** A note in a slot. `createdAt` is deliberately a different day — placement must ignore it. */
+/** `createdAt` is deliberately a different day — placement must ignore it. */
 const note = (id: string, occursAt: Date, content = 'body'): Note => ({
   id,
   content,
@@ -178,7 +178,7 @@ describe('assignNotes', () => {
   })
 
   it('compares instants, not clock fields, for a note carrying a non-UTC offset', () => {
-    // 19:30 local, expressed as an offset timestamp the way the API sends it.
+    // 19:30 local, as an offset timestamp the way the API sends it.
     const local = new Date(2026, 7, 25, 19, 30)
     const offsetIso = new Date(local.getTime()).toISOString() // same instant, UTC-rendered
 

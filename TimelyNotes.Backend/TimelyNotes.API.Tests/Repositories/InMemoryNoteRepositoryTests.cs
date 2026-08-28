@@ -4,12 +4,11 @@ namespace TimelyNotes.API.Tests.Repositories;
 
 public class InMemoryNoteRepositoryTests
 {
-    /// <summary>Local midnight today — the instant the seed is anchored to.</summary>
     private static readonly DateTimeOffset Today = new(DateTime.Today, DateTimeOffset.Now.Offset);
 
     private static DateTimeOffset Day(int offsetInDays) => Today.AddDays(offsetInDays);
 
-    /// <summary>The whole seeded span, plus a day either side — "everything the seed holds".</summary>
+    /// <summary>Wider than the seed, either side.</summary>
     private static (DateTimeOffset From, DateTimeOffset To) WholeSeed => (Day(-4), Day(4));
 
     [Fact]
@@ -102,8 +101,7 @@ public class InMemoryNoteRepositoryTests
     {
         var repository = new InMemoryNoteRepository();
 
-        // The seed is written now, so every note's CreatedAt sits inside today. Notes are still
-        // returned for a window three days back, and today's window still excludes them.
+        // Every seeded CreatedAt is today, so a three-day-back window proves OccursAt does the filtering.
         var past = await repository.GetBySchedule(
             "s1", Day(-3), Day(-2), TestContext.Current.CancellationToken);
         var today = await repository.GetBySchedule(

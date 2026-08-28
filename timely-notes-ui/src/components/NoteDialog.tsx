@@ -5,19 +5,15 @@ import type { Note, Period } from '../types'
 import NoteEditor from './NoteEditor'
 
 interface NoteDialogProps {
-  /** The period being written to. `null` closes the dialog. */
+  /** `null` closes the dialog. */
   period: Period | null
-  /** The note being opened, or `null` for a new one. */
+  /** `null` for a new note. */
   note: Note | null
   onSave: (markdown: string) => void
   onClose: () => void
 }
 
-/**
- * The note editor in a native modal `<dialog>`. New and existing notes share one editable view,
- * which is what the design doc asks for: a note's content stays editable after creation, and only
- * its `occursAt` slot is fixed. Nothing is persisted yet — that arrives with the create/update slice.
- */
+/** New and existing notes share one editable view: only a note's `occursAt` slot is fixed. */
 function NoteDialog({ period, note, onSave, onClose }: NoteDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const editorRef = useRef<MDXEditorMethods>(null)

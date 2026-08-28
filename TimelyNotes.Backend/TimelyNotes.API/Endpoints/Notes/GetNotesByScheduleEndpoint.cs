@@ -12,19 +12,17 @@ public class GetNotesByScheduleEndpoint(INoteRepository notes)
         AllowAnonymous();
         Summary(s =>
         {
-            s.Summary = "Lists a Schedule's notes falling in a half-open time range, newest first.";
+            s.Summary = "Lists a Schedule's notes in a time range, newest first.";
             s.Description =
-                "Returns every note in the Schedule whose occursAt is in [searchFrom, searchTo) — "
-                + "searchFrom inclusive, searchTo exclusive — ordered by occursAt descending. Both "
-                + "parameters are required ISO 8601 instants carrying their UTC offset, and the "
-                + $"range may not exceed {GetNotesByScheduleValidator.MaximumRange.TotalDays:0} days. "
-                + "Because the upper bound is exclusive, adjacent windows never return the same note twice.";
+                "Notes whose occursAt is in [searchFrom, searchTo) — searchTo exclusive, so adjacent "
+                + "windows never repeat a note. Both bounds are required ISO 8601 instants carrying "
+                + $"their UTC offset, at most {GetNotesByScheduleValidator.MaximumRange.TotalDays:0} days apart.";
         });
     }
 
     public override async Task HandleAsync(GetNotesByScheduleRequest req, CancellationToken ct)
     {
-        // The validator guarantees both bounds are present by the time the handler runs.
+        // Both bounds are non-null: the validator runs first.
         var scheduleNotes = await notes.GetBySchedule(
             req.ScheduleShortName, req.SearchFrom!.Value, req.SearchTo!.Value, ct);
 

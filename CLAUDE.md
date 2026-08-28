@@ -49,6 +49,14 @@ We use **Test Driven Development** in both the API and the UI: write a failing t
 
 ## Code style
 
+**Comments are concise, and rare.** Code should carry its own meaning; a comment is added only when it cannot. This applies equally to C# XML docs, TS/TSX JSDoc, inline comments, and FastEndpoints `Summary`/`Description` text.
+
+- **Never restate the code.** No comment for what a name already says (`/// <summary>The created date.</summary>`), no per-parameter docs that repeat the signature, no section-banner comments.
+- **Comment only the non-obvious:** a constraint the type cannot express (a half-open range), a decision that looks wrong without its reason (singleton lifetime, a frozen clock), a third-party quirk being worked around, or a test fixture choice that is itself under assertion.
+- **One or two lines.** Rationale essays, worked examples and history belong in `feature-docs/`, not in source. Prefer a fragment to a sentence, and drop "this method/class/component…" framing.
+- **Endpoint `Summary`/`Description`:** one line of summary; add a description only for a rule the caller cannot guess (required parameters, exclusive bounds, limits). Don't narrate the response shape the schema already shows.
+- **Deleting a stale comment beats updating it.** If the code moved on and the comment no longer earns its place, remove it.
+
 **Always pass the cancellation token explicitly to every async call that accepts one.** Never rely on a defaulted or omitted token — an unpassed token silently makes the call uncancellable.
 
 - Declare `CancellationToken ct` **without** a `= default`, so callers can't skip it by accident (see `INoteRepository`).

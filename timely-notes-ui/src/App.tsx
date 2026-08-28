@@ -13,23 +13,21 @@ interface AppProps {
   now?: Date
 }
 
-/** The outcome of one fetch, tagged with the Schedule it was for. */
 interface LoadedNotes {
   shortName: ScheduleShortName
   notes: Note[]
   error: string | null
 }
 
-/** Stable empty array, so `periods` isn't rebuilt on every render while a fetch is in flight. */
+/** Stable identity, so `periods` isn't rebuilt on every render while a fetch is in flight. */
 const NO_NOTES: Note[] = []
 
 const startOfDay = (at: Date) => new Date(at.getFullYear(), at.getMonth(), at.getDate())
 
-/** Local midnight `days` after the local midnight `at` falls in. Negative goes backwards. */
+/** Local midnight `days` from the one `at` falls in. Negative goes backwards. */
 const addDays = (at: Date, days: number) =>
   new Date(at.getFullYear(), at.getMonth(), at.getDate() + days)
 
-/** How far either side of today the default window reaches, in days. */
 const WINDOW_DAYS_EITHER_SIDE = 1
 
 function currentStart(day: Date, schedule: Schedule, now: Date): number {
@@ -42,17 +40,15 @@ function App({ now: nowProp }: AppProps) {
   const [now] = useState(() => nowProp ?? new Date())
   const today = useMemo(() => startOfDay(now), [now])
 
-  // The fetch window: three whole local days, half-open — yesterday's midnight up to (not
-  // including) the day after tomorrow's. The view still renders today only; the extra days are
-  // fetched and unused, which is what the scrolling feature will build on.
+  // Three whole local days are fetched but only today is rendered — groundwork for scrolling.
   const searchFrom = useMemo(() => addDays(today, -WINDOW_DAYS_EITHER_SIDE), [today])
   const searchTo = useMemo(() => addDays(today, WINDOW_DAYS_EITHER_SIDE + 1), [today])
 
   const [schedule, setSchedule] = useState<Schedule>(DEFAULT_SCHEDULE)
   const [loaded, setLoaded] = useState<LoadedNotes | null>(null)
 
-  // The selection is a timestamp, not a Period: periods are rebuilt whenever the notes or the
-  // Schedule change, so a held object reference would go stale on the next render.
+  // A timestamp, not a Period: periods are rebuilt whenever the notes or the Schedule change, so a
+  // held object reference would go stale.
   const [selectedStart, setSelectedStart] = useState(() =>
     currentStart(today, DEFAULT_SCHEDULE, now),
   )
@@ -80,8 +76,8 @@ function App({ now: nowProp }: AppProps) {
     return () => controller.abort()
   }, [schedule, searchFrom, searchTo])
 
-  // Loading is derived from which Schedule the last result was for, rather than flipped in the
-  // effect body — one less piece of state to keep in step with the request.
+  // Loading derived from which Schedule the last result was for — one less piece of state to keep
+  // in step with the request.
   const settled = loaded?.shortName === schedule.shortName ? loaded : null
   const notes = settled?.notes ?? NO_NOTES
   const error = settled?.error ?? null
@@ -122,7 +118,7 @@ function App({ now: nowProp }: AppProps) {
     setDialogNote(note)
   }
 
-  // Placeholder until a create/update endpoint exists — see Deferred in the slice TODO.
+  // Placeholder until a create/update endpoint exists.
   const handleSave = (markdown: string) => {
     console.log(markdown)
     closeDialog()

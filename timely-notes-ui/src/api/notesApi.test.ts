@@ -1,6 +1,6 @@
 import { getNotesBySchedule } from './notesApi'
 
-/** The default window App sends: yesterday's local midnight to the day after tomorrow's. */
+/** The default window App sends: yesterday's midnight to the day after tomorrow's. */
 const searchFrom = new Date(2026, 7, 24)
 const searchTo = new Date(2026, 7, 27)
 

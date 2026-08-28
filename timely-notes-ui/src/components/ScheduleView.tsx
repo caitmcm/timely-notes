@@ -14,10 +14,7 @@ interface ScheduleViewProps {
   onOpenNote: (period: Period, note: Note) => void
 }
 
-/**
- * The day as a calendar column: a date heading, one row per period, and the next day's midnight
- * closing it off. Periods arrive finished from `App` — this renders them and forwards events.
- */
+/** The day as a calendar column. Periods arrive finished from `App`. */
 function ScheduleView({
   day,
   periods,
@@ -29,10 +26,10 @@ function ScheduleView({
 }: ScheduleViewProps) {
   const selectedRef = useRef<HTMLLIElement>(null)
 
-  // On a short viewport at `1h` the selected row can start off-screen; bring it into view once.
+  // At `1h` the selected row can start off-screen.
   useEffect(() => {
     selectedRef.current?.scrollIntoView?.({ block: 'nearest' })
-    // Mount only: this is a one-off nudge, not a reaction to later selection changes.
+    // Mount only: a one-off nudge, not a reaction to later selection changes.
   }, [])
 
   return (

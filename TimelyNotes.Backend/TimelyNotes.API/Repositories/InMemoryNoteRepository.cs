@@ -3,16 +3,9 @@ using TimelyNotes.API.Models;
 namespace TimelyNotes.API.Repositories;
 
 /// <summary>
-/// Placeholder store holding notes in memory, seeded with example data. Registered as a singleton
-/// so the seeded state survives across requests.
+/// Dev-only store, seeded over local midnight today ± 3 days. "Today" is frozen when the singleton
+/// is built, so a server left running across midnight keeps serving the previous day — restart it.
 /// </summary>
-/// <remarks>
-/// The seed spreads notes over local midnight <em>today</em> ± 3 days, so a three-day window returns
-/// a strict subset and scroll-driven fetches have something to load in either direction. Because the
-/// singleton is built at startup, "today" is frozen when the process starts: a server left running
-/// across midnight keeps serving the previous day's window. Acceptable for a dev-only seed —
-/// restart the API to re-anchor it.
-/// </remarks>
 public class InMemoryNoteRepository : INoteRepository
 {
     private readonly List<Note> _notes;
@@ -32,7 +25,6 @@ public class InMemoryNoteRepository : INoteRepository
         [
             .. _notes
                 .Where(note => note.ScheduleShortName == scheduleShortName)
-                // Half-open: searchFrom inclusive, searchTo exclusive.
                 .Where(note => note.OccursAt >= searchFrom && note.OccursAt < searchTo)
                 .OrderByDescending(note => note.OccursAt)
         ];
@@ -63,10 +55,7 @@ public class InMemoryNoteRepository : INoteRepository
         yield return Seed("s6", at(2, 6), "Ahead of time: prep the create endpoint.");
     }
 
-    /// <summary>
-    /// Seeds one note. <c>OccursAt</c> is the slot it is written into; <c>CreatedAt</c> and
-    /// <c>ModifiedAt</c> are the construction time — so the seed itself shows the two are independent.
-    /// </summary>
+    /// <summary>Stamps the audit fields at construction time, so they differ from <c>OccursAt</c>.</summary>
     private static Note Seed(string scheduleShortName, DateTimeOffset occursAt, string content)
     {
         var writtenAt = DateTimeOffset.Now;

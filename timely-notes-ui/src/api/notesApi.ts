@@ -1,6 +1,6 @@
 import type { Note, ScheduleShortName } from '../types'
 
-/** A note exactly as it arrives on the wire — mirrors the API's `NoteResponse`. */
+/** Mirrors the API's `NoteResponse`. */
 interface NoteResponse {
   id: string
   content: string
@@ -22,12 +22,8 @@ function toNote(response: NoteResponse): Note {
 const pad = (value: number) => String(value).padStart(2, '0')
 
 /**
- * An ISO 8601 instant carrying the browser's UTC offset, e.g. `2026-08-27T00:00:00+01:00`.
- *
- * `toISOString` would send the same instant as UTC, which the server would read identically — but
- * the bounds are *local* midnights, and keeping the offset on the wire says so. The server has no
- * idea what timezone the caller is in, so the offset is the only thing that makes the window
- * meaningful.
+ * An instant carrying the browser's UTC offset, e.g. `2026-08-27T00:00:00+01:00`. The bounds are
+ * *local* midnights and the offset is what says so, which `toISOString`'s UTC would lose.
  */
 function toOffsetIso(at: Date): string {
   const offsetMinutes = -at.getTimezoneOffset()
@@ -42,14 +38,8 @@ function toOffsetIso(at: Date): string {
 }
 
 /**
- * Lists the notes belonging to a Schedule whose `occursAt` falls in the half-open window
- * `[searchFrom, searchTo)` — `searchFrom` inclusive, `searchTo` exclusive, so adjacent windows never
- * return the same note twice. The server rejects a window wider than 7 days.
- *
- * Calls the API same-origin — Vite's dev proxy forwards `/api` to the backend.
- *
- * `signal` is required rather than optional: the frontend mirror of the backend's "always pass the
- * cancellation token" rule, so an in-flight request can't outlive the effect that started it.
+ * Notes whose `occursAt` is in the half-open window `[searchFrom, searchTo)`; the server rejects a
+ * window wider than 7 days. `signal` is required so a request can't outlive its effect.
  */
 export async function getNotesBySchedule(
   shortName: ScheduleShortName,
@@ -57,7 +47,7 @@ export async function getNotesBySchedule(
   searchTo: Date,
   signal: AbortSignal,
 ): Promise<Note[]> {
-  // URLSearchParams, not string interpolation: a raw `+` in a query string means a space.
+  // URLSearchParams, not interpolation: a raw `+` in a query string means a space.
   const query = new URLSearchParams({
     searchFrom: toOffsetIso(searchFrom),
     searchTo: toOffsetIso(searchTo),

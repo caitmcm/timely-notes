@@ -5,9 +5,9 @@ import type { Note, Period } from '../types'
 
 interface PeriodRowProps {
   period: Period
-  /** Whether the clock is inside this period — a fact about time, not about the user. */
+  /** Whether the clock is inside this period, not whether the user picked it. */
   isCurrent: boolean
-  /** Whether the user has this period selected. Drives the highlight and the Note button. */
+  /** Drives the highlight and the Note button. */
   isSelected: boolean
   onSelect: (period: Period) => void
   onTakeNote: (period: Period) => void
@@ -17,12 +17,8 @@ interface PeriodRowProps {
 }
 
 /**
- * One block of the day. The whole row selects; the Note and existing-note buttons sit inside it
- * and stop the click from bubbling, so pressing one never re-fires selection.
- *
- * Rows are `option`s of the day's listbox so selection is exposed through `aria-selected` rather
- * than through styling alone. The row carries its own `aria-label`, so the buttons nested in it
- * don't end up in its accessible name.
+ * One block of the day. The whole row selects, so the nested buttons stop the click bubbling; the
+ * row carries its own `aria-label` so those buttons stay out of its accessible name.
  */
 function PeriodRow({
   period,

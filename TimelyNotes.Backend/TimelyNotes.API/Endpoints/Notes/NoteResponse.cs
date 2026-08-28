@@ -9,9 +9,9 @@ public class NoteResponse
     /// <summary>The slot the note is taken for — what the UI places and orders it by.</summary>
     public required DateTimeOffset OccursAt { get; set; }
 
-    /// <summary>Audit stamp: when the note was written. Plays no part in placement.</summary>
+    /// <summary>Audit stamp; never used for placement.</summary>
     public required DateTimeOffset CreatedAt { get; set; }
 
-    /// <summary>Audit stamp: when the note was last written to.</summary>
+    /// <summary>Audit stamp; never used for placement.</summary>
     public required DateTimeOffset ModifiedAt { get; set; }
 }

@@ -13,7 +13,7 @@ public class GetNotesByScheduleEndpointTests(ApiFixture app) : TestBase<ApiFixtu
 
     private static DateTimeOffset Day(int offsetInDays) => Today.AddDays(offsetInDays);
 
-    /// <summary>The route with an explicit half-open window, offsets and all, percent-encoded.</summary>
+    /// <summary>Percent-encoded so the offsets survive the query string.</summary>
     private static string Route(string scheduleShortName, DateTimeOffset searchFrom, DateTimeOffset searchTo) =>
         $"/api/schedules/{scheduleShortName}/notes"
         + $"?searchFrom={Uri.EscapeDataString(searchFrom.ToString("O"))}"

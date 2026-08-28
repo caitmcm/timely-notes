@@ -1,9 +1,7 @@
 /*
- * Calendar day view. The period list is a fixed-height flex column with every row `flex: 1 1 0`,
- * so rows share that height equally within a Schedule and stay exactly proportional across them:
- * 4 rows at `6h` are each six times the height of 24 rows at `1h`, and the whole day occupies the
- * same column height whichever Schedule is picked. That pins the shortest row at a 24th of the
- * day, so `--day-height` is set by what a 1h row needs in order to hold a note button.
+ * The period list is a fixed-height flex column of `flex: 1 1 0` rows, so the day occupies the same
+ * height under every Schedule. `--day-height` is therefore set by what a 1h row needs for a note
+ * button — the shortest row is a 24th of it.
  */
 
 :root {
@@ -50,7 +48,6 @@
   color: var(--danger);
 }
 
-/* Schedule picker ------------------------------------------------------- */
 
 .schedule-picker {
   display: flex;
@@ -79,7 +76,6 @@
   outline-offset: 2px;
 }
 
-/* Day view -------------------------------------------------------------- */
 
 .schedule-view {
   border: 1px solid var(--line-strong);
@@ -122,7 +118,6 @@
   color: var(--ink-muted);
 }
 
-/* Period rows ----------------------------------------------------------- */
 
 .period-row {
   flex: 1 1 0;
@@ -213,7 +208,6 @@
   outline-offset: 1px;
 }
 
-/* Note dialog ----------------------------------------------------------- */
 
 .note-dialog {
   width: min(44rem, 92vw);

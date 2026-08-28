@@ -67,7 +67,7 @@ function PeriodRow({
               onOpenNote(period, note)
             }}
           >
-            <span className="period-row__note-time">{formatTimeOfDay(note.createdAt)}</span>{' '}
+            <span className="period-row__note-time">{formatTimeOfDay(note.occursAt)}</span>{' '}
             {noteExcerpt(note.content)}
           </button>
         ))}

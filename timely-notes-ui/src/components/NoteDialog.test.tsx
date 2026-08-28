@@ -10,8 +10,9 @@ const evening = buildPeriods(day, 3)[6] // 18:00 – 21:00
 const existing: Note = {
   id: 'a',
   content: 'Evening wrap-up: slice one is close.',
-  createdAt: new Date(2026, 7, 25, 19, 30),
-  modifiedAt: new Date(2026, 7, 25, 19, 30),
+  occursAt: new Date(2026, 7, 25, 19, 30),
+  createdAt: new Date(2026, 7, 28, 9, 12),
+  modifiedAt: new Date(2026, 7, 28, 9, 12),
 }
 
 function renderDialog(overrides: Partial<React.ComponentProps<typeof NoteDialog>> = {}) {

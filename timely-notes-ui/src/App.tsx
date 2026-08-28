@@ -25,6 +25,13 @@ const NO_NOTES: Note[] = []
 
 const startOfDay = (at: Date) => new Date(at.getFullYear(), at.getMonth(), at.getDate())
 
+/** Local midnight `days` after the local midnight `at` falls in. Negative goes backwards. */
+const addDays = (at: Date, days: number) =>
+  new Date(at.getFullYear(), at.getMonth(), at.getDate() + days)
+
+/** How far either side of today the default window reaches, in days. */
+const WINDOW_DAYS_EITHER_SIDE = 1
+
 function currentStart(day: Date, schedule: Schedule, now: Date): number {
   const periods = buildPeriods(day, schedule.spanHours)
 
@@ -34,6 +41,12 @@ function currentStart(day: Date, schedule: Schedule, now: Date): number {
 function App({ now: nowProp }: AppProps) {
   const [now] = useState(() => nowProp ?? new Date())
   const today = useMemo(() => startOfDay(now), [now])
+
+  // The fetch window: three whole local days, half-open — yesterday's midnight up to (not
+  // including) the day after tomorrow's. The view still renders today only; the extra days are
+  // fetched and unused, which is what the scrolling feature will build on.
+  const searchFrom = useMemo(() => addDays(today, -WINDOW_DAYS_EITHER_SIDE), [today])
+  const searchTo = useMemo(() => addDays(today, WINDOW_DAYS_EITHER_SIDE + 1), [today])
 
   const [schedule, setSchedule] = useState<Schedule>(DEFAULT_SCHEDULE)
   const [loaded, setLoaded] = useState<LoadedNotes | null>(null)
@@ -50,7 +63,7 @@ function App({ now: nowProp }: AppProps) {
   useEffect(() => {
     const controller = new AbortController()
 
-    getNotesBySchedule(schedule.shortName, controller.signal)
+    getNotesBySchedule(schedule.shortName, searchFrom, searchTo, controller.signal)
       .then((notes) => setLoaded({ shortName: schedule.shortName, notes, error: null }))
       .catch(() => {
         if (controller.signal.aborted) {
@@ -65,7 +78,7 @@ function App({ now: nowProp }: AppProps) {
       })
 
     return () => controller.abort()
-  }, [schedule])
+  }, [schedule, searchFrom, searchTo])
 
   // Loading is derived from which Schedule the last result was for, rather than flipped in the
   // effect body — one less piece of state to keep in step with the request.

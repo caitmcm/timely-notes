@@ -38,18 +38,21 @@ export function findCurrentPeriod(periods: Period[], now: Date): Period | undefi
 }
 
 /**
- * Buckets each note into the period whose half-open range contains its `createdAt`, oldest-first
+ * Buckets each note into the period whose half-open range contains its `occursAt`, oldest-first
  * within each period. Pure: returns new `Period` objects and leaves both inputs untouched.
+ *
+ * Placement is `occursAt` — the slot the note was written *for* — never `createdAt`, which only
+ * records when it was typed: a note written today for last Tuesday belongs to last Tuesday.
  *
  * The API returns notes newest-first and stamps them with an offset, so this sorts by instant
  * rather than trusting the wire order.
  */
 export function assignNotes(periods: Period[], notes: Note[]): Period[] {
-  const ascending = [...notes].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+  const ascending = [...notes].sort((a, b) => a.occursAt.getTime() - b.occursAt.getTime())
 
   return periods.map((period) => ({
     ...period,
-    notes: ascending.filter((note) => isCurrentPeriod(period, note.createdAt)),
+    notes: ascending.filter((note) => isCurrentPeriod(period, note.occursAt)),
   }))
 }
 

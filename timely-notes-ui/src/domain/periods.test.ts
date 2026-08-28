@@ -13,11 +13,13 @@ import {
 /** 25/08/2026, the date the mockup is drawn against. */
 const day = new Date(2026, 7, 25)
 
-const note = (id: string, createdAt: Date, content = 'body'): Note => ({
+/** A note in a slot. `createdAt` is deliberately a different day — placement must ignore it. */
+const note = (id: string, occursAt: Date, content = 'body'): Note => ({
   id,
   content,
-  createdAt,
-  modifiedAt: createdAt,
+  occursAt,
+  createdAt: new Date(2026, 7, 28, 9, 12),
+  modifiedAt: new Date(2026, 7, 28, 9, 12),
 })
 
 describe('buildPeriods', () => {
@@ -100,7 +102,7 @@ describe('findCurrentPeriod', () => {
 })
 
 describe('assignNotes', () => {
-  it('buckets a note into the period containing its createdAt', () => {
+  it('buckets a note into the period containing its occursAt', () => {
     const periods = assignNotes(buildPeriods(day, 3), [note('a', new Date(2026, 7, 25, 19, 30))])
 
     expect(periods[6].notes.map((n) => n.id)).toEqual(['a'])
@@ -133,7 +135,43 @@ describe('assignNotes', () => {
     expect(notes.map((n) => n.id)).toEqual(['newest', 'oldest'])
   })
 
-  it('drops notes timestamped on another day', () => {
+  it('places a note by occursAt, ignoring a createdAt in a different period', () => {
+    const written: Note = {
+      id: 'written-later',
+      content: 'body',
+      occursAt: new Date(2026, 7, 25, 19, 30),
+      createdAt: new Date(2026, 7, 25, 8, 0),
+      modifiedAt: new Date(2026, 7, 25, 8, 0),
+    }
+
+    const periods = assignNotes(buildPeriods(day, 3), [written])
+
+    expect(periods[6].notes.map((n) => n.id)).toEqual(['written-later'])
+    expect(periods[2].notes).toEqual([])
+  })
+
+  it('orders within a period by occursAt, not createdAt', () => {
+    const later: Note = {
+      id: 'later-slot',
+      content: 'body',
+      occursAt: new Date(2026, 7, 25, 20, 0),
+      createdAt: new Date(2026, 7, 20, 9, 0),
+      modifiedAt: new Date(2026, 7, 20, 9, 0),
+    }
+    const earlier: Note = {
+      id: 'earlier-slot',
+      content: 'body',
+      occursAt: new Date(2026, 7, 25, 18, 30),
+      createdAt: new Date(2026, 7, 27, 9, 0),
+      modifiedAt: new Date(2026, 7, 27, 9, 0),
+    }
+
+    const periods = assignNotes(buildPeriods(day, 3), [later, earlier])
+
+    expect(periods[6].notes.map((n) => n.id)).toEqual(['earlier-slot', 'later-slot'])
+  })
+
+  it('drops notes occurring on another day', () => {
     const periods = assignNotes(buildPeriods(day, 3), [note('yesterday', new Date(2026, 7, 24, 19, 30))])
 
     expect(periods.flatMap((period) => period.notes)).toEqual([])

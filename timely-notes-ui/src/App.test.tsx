@@ -7,11 +7,15 @@ const now = new Date(2026, 7, 25, 20, 20)
 
 const iso = (hour: number, minute = 0) => new Date(2026, 7, 25, hour, minute).toISOString()
 
+/** The write time is a different day throughout: only `occursAt` decides where a note lands. */
+const writtenAt = new Date(2026, 7, 28, 9, 12).toISOString()
+
 const wireNote = (id: string, hour: number, content: string) => ({
   id,
   content,
-  createdAt: iso(hour),
-  modifiedAt: iso(hour),
+  occursAt: iso(hour),
+  createdAt: writtenAt,
+  modifiedAt: writtenAt,
 })
 
 /** The API answers newest-first, so the fixtures do too. */
@@ -22,7 +26,7 @@ const s3Notes = [
 
 function stubFetch(byShortName: Record<string, unknown[]> = { s3: s3Notes }) {
   const fetchMock = vi.fn(async (url: string) => {
-    const shortName = url.split('/')[3]
+    const shortName = new URL(url, 'http://localhost').pathname.split('/')[3]
 
     return { ok: true, status: 200, json: async () => byShortName[shortName] ?? [] } as Response
   })
@@ -32,6 +36,13 @@ function stubFetch(byShortName: Record<string, unknown[]> = { s3: s3Notes }) {
 }
 
 const renderApp = () => render(<App now={now} />)
+
+/** The URLs fetch was called with, parsed. */
+const requests = (fetchMock: ReturnType<typeof stubFetch>) =>
+  fetchMock.mock.calls.map((call) => new URL(call[0] as string, 'http://localhost'))
+
+const requestedShortNames = (fetchMock: ReturnType<typeof stubFetch>) =>
+  requests(fetchMock).map((url) => url.pathname.split('/')[3])
 
 describe('App', () => {
   afterEach(() => {
@@ -43,10 +54,39 @@ describe('App', () => {
 
     renderApp()
 
-    await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith('/api/schedules/s3/notes', expect.anything()),
-    )
+    await waitFor(() => expect(requestedShortNames(fetchMock)).toContain('s3'))
     expect(screen.getByRole('button', { name: '3h', pressed: true })).toBeInTheDocument()
+  })
+
+  it('asks for a three-day window: yesterday, today and tomorrow, half-open', async () => {
+    const fetchMock = stubFetch()
+
+    renderApp()
+
+    await waitFor(() => expect(requests(fetchMock)).toHaveLength(1))
+    const { searchParams } = requests(fetchMock)[0]
+    expect(new Date(searchParams.get('searchFrom')!)).toEqual(new Date(2026, 7, 24))
+    expect(new Date(searchParams.get('searchTo')!)).toEqual(new Date(2026, 7, 27))
+  })
+
+  it('fetches once per schedule change, not once per render', async () => {
+    const fetchMock = stubFetch({ s3: s3Notes, s6: [] })
+    renderApp()
+    await screen.findByRole('button', { name: /Afternoon block/ })
+
+    await userEvent.click(screen.getByRole('button', { name: '6h' }))
+
+    await waitFor(() => expect(requestedShortNames(fetchMock)).toEqual(['s3', 's6']))
+  })
+
+  it('places notes by occursAt even when they were written on another day', async () => {
+    stubFetch()
+    renderApp()
+
+    const morning = await screen.findByRole('option', { name: '09:00 – 12:00' })
+
+    // The fixtures' createdAt is 28/08 09:12; the row shows the 09:00 slot it occurs in.
+    expect(morning).toContainElement(screen.getByRole('button', { name: /^09:00 Morning block/ }))
   })
 
   it('refetches with the new short name when the schedule changes', async () => {
@@ -56,9 +96,7 @@ describe('App', () => {
 
     await userEvent.click(screen.getByRole('button', { name: '6h' }))
 
-    await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith('/api/schedules/s6/notes', expect.anything()),
-    )
+    await waitFor(() => expect(requestedShortNames(fetchMock)).toContain('s6'))
     expect(screen.getAllByRole('option')).toHaveLength(4)
   })
 

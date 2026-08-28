@@ -1,15 +1,41 @@
 @TimelyNotes.API_HostAddress = http://localhost:5186
 
+# The notes route filters on a required half-open window: [searchFrom, searchTo).
+# Both are ISO 8601 instants carrying their UTC offset; `+` must be percent-encoded as %2B.
+# Adjust the dates to sit around the day you run these on — the seed is anchored to today ± 3 days.
+@searchFrom = 2026-08-27T00:00:00%2B01:00
+@searchTo = 2026-08-30T00:00:00%2B01:00
+
 ### List the notes for the 1-hourly Schedule
-GET {{TimelyNotes.API_HostAddress}}/api/schedules/s1/notes
+GET {{TimelyNotes.API_HostAddress}}/api/schedules/s1/notes?searchFrom={{searchFrom}}&searchTo={{searchTo}}
 Accept: application/json
 
 ### List the notes for the 3-hourly Schedule
-GET {{TimelyNotes.API_HostAddress}}/api/schedules/s3/notes
+GET {{TimelyNotes.API_HostAddress}}/api/schedules/s3/notes?searchFrom={{searchFrom}}&searchTo={{searchTo}}
 Accept: application/json
 
 ### List the notes for the 6-hourly Schedule
-GET {{TimelyNotes.API_HostAddress}}/api/schedules/s6/notes
+GET {{TimelyNotes.API_HostAddress}}/api/schedules/s6/notes?searchFrom={{searchFrom}}&searchTo={{searchTo}}
+Accept: application/json
+
+### The previous window — half-open, so it shares no note with the one above
+GET {{TimelyNotes.API_HostAddress}}/api/schedules/s1/notes?searchFrom=2026-08-24T00:00:00%2B01:00&searchTo={{searchFrom}}
+Accept: application/json
+
+### A window holding nothing — 200 with an empty list
+GET {{TimelyNotes.API_HostAddress}}/api/schedules/s1/notes?searchFrom=2027-01-01T00:00:00%2B00:00&searchTo=2027-01-02T00:00:00%2B00:00
+Accept: application/json
+
+### Too wide — 8 days is a 400
+GET {{TimelyNotes.API_HostAddress}}/api/schedules/s1/notes?searchFrom=2026-08-27T00:00:00%2B01:00&searchTo=2026-09-04T00:00:00%2B01:00
+Accept: application/json
+
+### searchTo before searchFrom — a 400
+GET {{TimelyNotes.API_HostAddress}}/api/schedules/s1/notes?searchFrom={{searchTo}}&searchTo={{searchFrom}}
+Accept: application/json
+
+### Missing searchTo — a 400
+GET {{TimelyNotes.API_HostAddress}}/api/schedules/s1/notes?searchFrom={{searchFrom}}
 Accept: application/json
 
 ###

@@ -10,8 +10,10 @@ const evening = () => buildPeriods(day, 3)[6] // 18:00 – 21:00
 const note = (id: string, hour: number, minute: number, content: string): Note => ({
   id,
   content,
-  createdAt: new Date(2026, 7, 25, hour, minute),
-  modifiedAt: new Date(2026, 7, 25, hour, minute),
+  occursAt: new Date(2026, 7, 25, hour, minute),
+  // Deliberately a different day: the row shows the slot, never the write time.
+  createdAt: new Date(2026, 7, 28, 9, 12),
+  modifiedAt: new Date(2026, 7, 28, 9, 12),
 })
 
 const withNotes = (period: Period, notes: Note[]): Period => ({ ...period, notes })

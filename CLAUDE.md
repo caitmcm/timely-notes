@@ -16,7 +16,8 @@ timely-notes/
 │   ├── todo/                      # the feature specification being worked on
 │   └── done/                      # completed specifications, kept as a record
 │       ├── GetNotesBySchedule.MD
-│       └── FrontendSkeleton.MD
+│       ├── FrontendSkeleton.MD
+│       └── NotesDateRange.MD
 ├── TimelyNotes.Backend/           # ASP.NET Core Web API (.NET 10) — its own solution
 └── timely-notes-ui/               # React + TypeScript frontend (Vite) — its own npm package
 ```
@@ -36,9 +37,11 @@ The two projects are wired together only by a **Vite dev proxy** (`/api` → `ht
 
 ## Current state
 
-**Backend — one vertical slice complete.** `GET /api/schedules/{scheduleShortName}/notes` lists the notes for a Schedule (`s1`/`s3`/`s6`), served from an in-memory repository seeded with example data, with repository and endpoint tests. Nothing else exists: no create/get-by-id, no Schedule endpoints, no persistence, no auth.
+**Backend — one vertical slice complete, now range-filtered.** `GET /api/schedules/{scheduleShortName}/notes?searchFrom=…&searchTo=…` lists a Schedule's notes (`s1`/`s3`/`s6`) whose `OccursAt` falls in the **half-open** window `[searchFrom, searchTo)`, newest first, served from an in-memory repository seeded across today ± 3 days. Both parameters are required ISO 8601 instants carrying their UTC offset, and a window wider than 7 days is a `400` (`GetNotesByScheduleValidator`). Repository and endpoint tests cover the range, the boundaries and every rejection. Nothing else exists: no create/get-by-id, no Schedule endpoints, no persistence, no auth.
 
-**Frontend — the day schedule view slice is complete.** The app shows today split into periods by the selected Schedule, fetches that Schedule's notes from the backend through the Vite dev proxy, and opens both new and existing notes in a `NoteDialog` wrapping `NoteEditor`. Save still only `console.log`s the markdown — there is no create/update endpoint. There is no router and no state management library; the selected Schedule and period are React state in `App.tsx`. Vitest + React Testing Library are set up and the slice is covered by tests.
+**`Note` has two independent timestamps.** `OccursAt` is the slot the note is taken *for* — the only field that decides placement, ordering and filtering, in both projects. `CreatedAt`/`ModifiedAt` are server-set audit stamps recording when it was written, and nothing reads them for placement. When the create endpoint lands, the client sends `occursAt` and the server sets the rest.
+
+**Frontend — the day schedule view slice is complete.** The app shows today split into periods by the selected Schedule, fetches through the Vite dev proxy, and opens both new and existing notes in a `NoteDialog` wrapping `NoteEditor`. Save still only `console.log`s the markdown — there is no create/update endpoint. `App` requests a **three-day window** (yesterday's local midnight up to the day after tomorrow's) but still renders today only; the extra days are groundwork for the deferred scrolling view. There is no router and no state management library; the selected Schedule and period are React state in `App.tsx`. Vitest + React Testing Library are set up and the slice is covered by tests.
 
 ## Development approach
 
@@ -69,6 +72,10 @@ We use **Test Driven Development** in both the API and the UI: write a failing t
 
 **Endpoints use FastEndpoints in the REPR pattern** — one endpoint per route, with `Request`/`Response`/`Endpoint` types each in their own file under `Endpoints/<Area>/` (see `Endpoints/Notes/`). `Program.cs` wires this up via `AddFastEndpoints()`/`UseFastEndpoints()` plus Swagger. Don't add MVC controllers.
 
+**Validate requests with a FluentValidation `Validator<TRequest>`** in its own file beside the endpoint (`GetNotesByScheduleValidator`) — FastEndpoints discovers it and turns a failure into a `400` before the handler runs. Make an optional-looking query parameter **nullable** even when the value is required, so an omitted one fails `NotNull()` with a message naming the parameter, rather than silently binding to `default`.
+
+**Filtering belongs in the repository, not the endpoint.** It is a query concern, and a real store will push it into the database instead of materialising everything first.
+
 **Layout inside `TimelyNotes.API`:** `Models/` (entities), `Repositories/` (interfaces and implementations side by side), `Endpoints/` (FastEndpoints). Repositories abstract persistence so the store can be swapped later; `InMemoryNoteRepository` is registered as a **singleton** so its seeded state survives across requests.
 
 ## Frontend — `timely-notes-ui`
@@ -84,9 +91,13 @@ We use **Test Driven Development** in both the API and the UI: write a failing t
 
 **Layout inside `src/`:** `main.tsx` (root render), `App.tsx` + `App.css` (shell and day-view styles), `types/` (shared `Note`/`Schedule`/`Period`/`SpanHours`), `domain/` (pure time logic — `schedules.ts`, `periods.ts`, `notes.ts`), `api/` (`notesApi.ts`, a `fetch` wrapper returning parsed `Note`s), `components/` (`SchedulePicker`, `ScheduleView`, `PeriodRow`, `NoteDialog`, `NoteEditor`), `index.css` (minimal global styles; no design system).
 
-**`App` owns the domain calls.** It runs `buildPeriods` then `assignNotes` in a `useMemo` and hands `ScheduleView` a finished `Period[]`; nothing below `App` calls the domain functions, so component tests pass in fixed periods. The selected period is stored as a **timestamp**, not a `Period` object — periods are rebuilt whenever the notes or the Schedule change, so a held reference goes stale.
+**`App` owns the domain calls.** It runs `buildPeriods` then `assignNotes` in a `useMemo` and hands `ScheduleView` a finished `Period[]`; nothing below `App` calls the domain functions, so component tests pass in fixed periods. The selected period is stored as a **timestamp**, not a `Period` object — periods are rebuilt whenever the notes or the Schedule change, so a held reference goes stale. It also owns the fetch window: `searchFrom`/`searchTo` are `useMemo`d off the frozen `today` so they stay referentially stable and the effect fires once per Schedule change.
 
-**Pass an `AbortSignal` to every API call** — `getNotesBySchedule` takes one as a required parameter, wired to the calling effect's cleanup. This is the frontend mirror of the backend's cancellation-token rule above.
+**Place notes by `occursAt`, never `createdAt`.** `assignNotes` buckets on it and `PeriodRow` prints it beside each note; `createdAt` is only an audit stamp. Test fixtures deliberately set `createdAt` to a different day so the distinction is asserted rather than incidental.
+
+**Pass an `AbortSignal` to every API call** — `getNotesBySchedule(shortName, searchFrom, searchTo, signal)` takes one as a required parameter, wired to the calling effect's cleanup. This is the frontend mirror of the backend's cancellation-token rule above.
+
+**Serialise instants with their offset, and build query strings with `URLSearchParams`.** `notesApi.ts` renders the window bounds as `2026-08-27T00:00:00+01:00` rather than `toISOString()`'s UTC — the bounds are *local* midnights and the offset is what says so. A raw `+` in a query string means a space, so it must be percent-encoded. Frontend tests assert such URLs **structurally** (parse, compare instants, match the format with a regex): a literal expectation only passes in one timezone.
 
 **Inject the clock, never read it in a component.** `App` and `ScheduleView` both take an optional `now` prop so tests are deterministic; `App` freezes it at mount.
 

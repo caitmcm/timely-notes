@@ -9,8 +9,9 @@ const now = new Date(2026, 7, 25, 20, 20)
 const note = (id: string, hour: number, content: string): Note => ({
   id,
   content,
-  createdAt: new Date(2026, 7, 25, hour),
-  modifiedAt: new Date(2026, 7, 25, hour),
+  occursAt: new Date(2026, 7, 25, hour),
+  createdAt: new Date(2026, 7, 28, 9, 12),
+  modifiedAt: new Date(2026, 7, 28, 9, 12),
 })
 
 function renderView(overrides: Partial<React.ComponentProps<typeof ScheduleView>> = {}) {

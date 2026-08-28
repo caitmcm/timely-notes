@@ -16,7 +16,11 @@ export interface Schedule {
 export interface Note {
   id: string
   content: string
+  /** The slot the note is taken *for* — what the view places and orders it by. */
+  occursAt: Date
+  /** Audit stamp: when the note was written. Never used for placement. */
   createdAt: Date
+  /** Audit stamp: when the note was last written to. */
   modifiedAt: Date
 }
 

@@ -13,11 +13,14 @@ timely-notes/
 ├── DESIGN DOCUMENT.MD             # domain model + goals (source of truth for "what")
 ├── feature-docs/                  # how work is defined and recorded
 │   ├── WORKFLOW.MD                # the process — read before specifying or implementing
-│   ├── todo/                      # the feature specification being worked on
+│   ├── todo/                      # the feature specifications not yet finished
+│   │   ├── NoteAutosave.MD        # next: create-on-open, autosave, POST/PUT
+│   │   └── PlaywrightE2E.MD       # last: the browser acceptance lane
 │   └── done/                      # completed specifications, kept as a record
 │       ├── GetNotesBySchedule.MD
 │       ├── FrontendSkeleton.MD
-│       └── NotesDateRange.MD
+│       ├── NotesDateRange.MD
+│       └── LiveClock.MD
 ├── TimelyNotes.Backend/           # ASP.NET Core Web API (.NET 10) — its own solution
 └── timely-notes-ui/               # React + TypeScript frontend (Vite) — its own npm package
 ```
@@ -41,7 +44,7 @@ The two projects are wired together only by a **Vite dev proxy** (`/api` → `ht
 
 **`Note` has two independent timestamps.** `OccursAt` is the slot the note is taken *for* — the only field that decides placement, ordering and filtering, in both projects. `CreatedAt`/`ModifiedAt` are server-set audit stamps recording when it was written, and nothing reads them for placement. When the create endpoint lands, the client sends `occursAt` and the server sets the rest.
 
-**Frontend — the day schedule view slice is complete.** The app shows today split into periods by the selected Schedule, fetches through the Vite dev proxy, and opens both new and existing notes in a `NoteDialog` wrapping `NoteEditor`. Save still only `console.log`s the markdown — there is no create/update endpoint. `App` requests a **three-day window** (yesterday's local midnight up to the day after tomorrow's) but still renders today only; the extra days are groundwork for the deferred scrolling view. There is no router and no state management library; the selected Schedule and period are React state in `App.tsx`. Vitest + React Testing Library are set up and the slice is covered by tests.
+**Frontend — the day schedule view slice is complete, and its clock is live.** The app shows the viewed day split into periods by the selected Schedule, fetches through the Vite dev proxy, and opens both new and existing notes in a `NoteDialog` wrapping `NoteEditor`. `useNow` ticks on the minute and resyncs on visibility/focus, so the current-period marker moves and an untouched view rolls over at midnight; a view the user has committed to stays put and is offered *Go to today*. Save still only `console.log`s the markdown and the note's `occursAt` — there is no create/update endpoint. `App` requests a **three-day window** (the day before the viewed day's local midnight up to the day after it) but renders one day only; the extra days are groundwork for the deferred scrolling view. There is no router and no state management library; the selected Schedule and what the user has pinned are React state in `App.tsx`. Vitest + React Testing Library are set up and the slice is covered by tests.
 
 ## Development approach
 
@@ -97,9 +100,13 @@ We use **Test Driven Development** in both the API and the UI: write a failing t
 
 **`vite.config.ts` proxies `/api` to `http://localhost:5186`**, so the UI calls the backend same-origin and no CORS config is needed. Dev-only — there is no production API base URL yet.
 
-**Layout inside `src/`:** `main.tsx` (root render), `App.tsx` + `App.css` (shell and day-view styles), `types/` (shared `Note`/`Schedule`/`Period`/`SpanHours`), `domain/` (pure time logic — `schedules.ts`, `periods.ts`, `notes.ts`), `api/` (`notesApi.ts`, a `fetch` wrapper returning parsed `Note`s), `components/` (`SchedulePicker`, `ScheduleView`, `PeriodRow`, `NoteDialog`, `NoteEditor`), `index.css` (minimal global styles; no design system).
+**Layout inside `src/`:** `main.tsx` (root render), `App.tsx` + `App.css` (shell and day-view styles), `types/` (shared `Note`/`Schedule`/`Period`/`SpanHours`), `domain/` (pure time logic — `schedules.ts`, `periods.ts`, `notes.ts`), `hooks/` (`useNow.ts`), `api/` (`notesApi.ts`, a `fetch` wrapper returning parsed `Note`s), `components/` (`SchedulePicker`, `ScheduleView`, `PeriodRow`, `NoteDialog`, `NoteEditor`), `index.css` (minimal global styles; no design system).
 
-**`App` owns the domain calls.** It runs `buildPeriods` then `assignNotes` in a `useMemo` and hands `ScheduleView` a finished `Period[]`; nothing below `App` calls the domain functions, so component tests pass in fixed periods. The selected period is stored as a **timestamp**, not a `Period` object — periods are rebuilt whenever the notes or the Schedule change, so a held reference goes stale. It also owns the fetch window: `searchFrom`/`searchTo` are `useMemo`d off the frozen `today` so they stay referentially stable and the effect fires once per Schedule change.
+**`App` owns the domain calls.** It runs `buildPeriods` then `assignNotes` in a `useMemo` and hands `ScheduleView` a finished `Period[]`; nothing below `App` calls the domain functions, so component tests pass in fixed periods. The selected period is stored as a **timestamp**, not a `Period` object — periods are rebuilt whenever the notes or the Schedule change, so a held reference goes stale. It also owns the fetch window: `searchFrom`/`searchTo` are `useMemo`d off `viewedDayStart` so they stay referentially stable and the effect fires once per Schedule change or rollover.
+
+**The viewed day and the current day are separate.** `currentDay` comes from the clock; the day being read is `pinned?.dayStart ?? currentDayStart`, derived rather than stored. `pinned` is `null` until the user commits to something — selecting a row, or opening a dialog — and while it is null the view *is* the clock: the day and the selection both follow it, so a tab left open overnight does the obvious thing. Once pinned, a rollover moves nothing (an open note's `occursAt` was stamped on the old day) and a `role="status"` notice offers **Go to today**, which is `setPinned(null)`. That notice is the only day navigation there is; arbitrary movement belongs to the deferred scrolling view.
+
+**Memoise on the day as a number, never on `now`.** `now` is a fresh `Date` every minute, so anything keyed on it — the window, the periods — would be rebuilt each tick and the fetch effect would refire each tick. `currentDayStart`/`viewedDayStart` are epoch ms of local midnight and are what everything downstream keys off. A tick must never cause a refetch, and there is a test asserting exactly that.
 
 **Place notes by `occursAt`, never `createdAt`.** `assignNotes` buckets on it and `PeriodRow` prints it beside each note; `createdAt` is only an audit stamp. Test fixtures deliberately set `createdAt` to a different day so the distinction is asserted rather than incidental.
 
@@ -107,7 +114,9 @@ We use **Test Driven Development** in both the API and the UI: write a failing t
 
 **Serialise instants with their offset, and build query strings with `URLSearchParams`.** `notesApi.ts` renders the window bounds as `2026-08-27T00:00:00+01:00` rather than `toISOString()`'s UTC — the bounds are *local* midnights and the offset is what says so. A raw `+` in a query string means a space, so it must be percent-encoded. Frontend tests assert such URLs **structurally** (parse, compare instants, match the format with a regex): a literal expectation only passes in one timezone.
 
-**Inject the clock, never read it in a component.** `App` and `ScheduleView` both take an optional `now` prop so tests are deterministic; `App` freezes it at mount.
+**`useNow` is the only clock read in the app.** `useNow(frozen?)` returns `{ now, readNow }`: `now` is state replaced as the wall clock crosses each minute (nothing in the UI is finer-grained), and `readNow()` is the exact instant for a one-off stamp. It ticks on a self-rescheduling `setTimeout` whose delay is recomputed from the clock each time, *and* resyncs on `visibilitychange`/`focus` — a timer alone misses a suspended tab, a listener alone misses a tab left visible on a second monitor. Components never call `new Date()`: `ScheduleView` takes `now` as a **required** prop. `App`'s optional `now` prop means "frozen here" — supplied, the hook registers no timer and no listeners, which is how the older component tests stay deterministic; ticking is tested by rendering without it under fake timers.
+
+**A new note's `occursAt` is the client's, stamped when the dialog opens.** `occursAtFor(period, now)` in `domain/notes.ts` is `now` for the live slot (so the row reads `09:47`, not `09:00`) and `period.start` for any other. `App.handleTakeNote` computes it with `readNow()`, not the ticked `now`, and holds it in the dialog state — a note begun at 23:58 and finished at 00:03 belongs to the 23:00 slot, and `occursAt` is immutable. `createdAt`/`modifiedAt` stay the server's and are never sent.
 
 **Markdown editing uses `@mdxeditor/editor`.** `NoteEditor` is a `forwardRef` wrapper exposing `MDXEditorMethods` (so a parent reads the markdown via `ref.current.getMarkdown()`) and configures the plugin list and toolbar. Add editor features by extending that plugin list rather than dropping a second editor in. `@mdxeditor/editor/style.css` is imported inside the component.
 

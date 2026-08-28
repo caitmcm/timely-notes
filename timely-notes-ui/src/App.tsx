@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getNotesBySchedule } from './api/notesApi'
-import { assignNotes, buildPeriods, findCurrentPeriod } from './domain/periods'
+import { occursAtFor } from './domain/notes'
+import { assignNotes, buildPeriods, findCurrentPeriod, formatDayHeading } from './domain/periods'
 import { DEFAULT_SCHEDULE, SCHEDULES } from './domain/schedules'
+import { useNow } from './hooks/useNow'
 import SchedulePicker from './components/SchedulePicker'
 import ScheduleView from './components/ScheduleView'
 import NoteDialog from './components/NoteDialog'
@@ -9,8 +11,18 @@ import type { Note, Period, Schedule, ScheduleShortName } from './types'
 import './App.css'
 
 interface AppProps {
-  /** Injected by tests. Captured once on mount — the view doesn't tick; this slice is today-only. */
+  /** Injected by tests to freeze the clock: supplied, the view never ticks and never rolls over. */
   now?: Date
+}
+
+/**
+ * What the user has committed to: the day being read and the row chosen on it. `null` means the
+ * view still follows the clock. A timestamp, not a Period — periods are rebuilt whenever the notes
+ * or the Schedule change, so a held object reference would go stale.
+ */
+interface Pinned {
+  dayStart: number
+  selectedStart: number
 }
 
 interface LoadedNotes {
@@ -37,24 +49,30 @@ function currentStart(day: Date, schedule: Schedule, now: Date): number {
 }
 
 function App({ now: nowProp }: AppProps) {
-  const [now] = useState(() => nowProp ?? new Date())
-  const today = useMemo(() => startOfDay(now), [now])
-
-  // Three whole local days are fetched but only today is rendered — groundwork for scrolling.
-  const searchFrom = useMemo(() => addDays(today, -WINDOW_DAYS_EITHER_SIDE), [today])
-  const searchTo = useMemo(() => addDays(today, WINDOW_DAYS_EITHER_SIDE + 1), [today])
+  const { now, readNow } = useNow(nowProp)
 
   const [schedule, setSchedule] = useState<Schedule>(DEFAULT_SCHEDULE)
   const [loaded, setLoaded] = useState<LoadedNotes | null>(null)
+  const [pinned, setPinned] = useState<Pinned | null>(null)
 
-  // A timestamp, not a Period: periods are rebuilt whenever the notes or the Schedule change, so a
-  // held object reference would go stale.
-  const [selectedStart, setSelectedStart] = useState(() =>
-    currentStart(today, DEFAULT_SCHEDULE, now),
-  )
+  // Everything derived keys off the day as a number, never off `now`: `now` is a fresh Date every
+  // minute, so memoising on it would rebuild the window and refire the fetch on every tick.
+  const currentDayStart = useMemo(() => startOfDay(now).getTime(), [now])
+
+  // Unpinned, the view *is* the clock — derived rather than stored, so a rollover moves it with no
+  // effect to fire and nothing to keep in step.
+  const viewedDayStart = pinned?.dayStart ?? currentDayStart
+  const viewedDay = useMemo(() => new Date(viewedDayStart), [viewedDayStart])
+
+  // Three whole local days are fetched but only the viewed one is rendered — groundwork for scrolling.
+  const searchFrom = useMemo(() => addDays(viewedDay, -WINDOW_DAYS_EITHER_SIDE), [viewedDay])
+  const searchTo = useMemo(() => addDays(viewedDay, WINDOW_DAYS_EITHER_SIDE + 1), [viewedDay])
+
+  const selectedStart = pinned?.selectedStart ?? currentStart(viewedDay, schedule, now)
 
   const [dialogPeriod, setDialogPeriod] = useState<Period | null>(null)
   const [dialogNote, setDialogNote] = useState<Note | null>(null)
+  const [dialogOccursAt, setDialogOccursAt] = useState<Date | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -84,16 +102,21 @@ function App({ now: nowProp }: AppProps) {
 
   // App owns the domain calls, so everything below it is handed finished periods.
   const periods = useMemo(
-    () => assignNotes(buildPeriods(today, schedule.spanHours), notes),
-    [today, schedule, notes],
+    () => assignNotes(buildPeriods(viewedDay, schedule.spanHours), notes),
+    [viewedDay, schedule, notes],
   )
 
   const selectedPeriod = periods.find((period) => period.start.getTime() === selectedStart)
+  const rolledOver = pinned !== null && pinned.dayStart !== currentDayStart
 
   const closeDialog = () => {
     setDialogPeriod(null)
     setDialogNote(null)
+    setDialogOccursAt(null)
   }
+
+  /** Stop following the clock, leaving the view exactly where the user is reading it. */
+  const pinHere = () => setPinned({ dayStart: viewedDayStart, selectedStart })
 
   const handleScheduleChange = (shortName: ScheduleShortName) => {
     const next = SCHEDULES.find((candidate) => candidate.shortName === shortName)
@@ -102,25 +125,38 @@ function App({ now: nowProp }: AppProps) {
       return
     }
 
-    // Re-chunking the day can leave the old selection off a boundary, so start again from now.
+    // Re-chunking the day can leave a pinned selection off a boundary, so start again from now.
     setSchedule(next)
-    setSelectedStart(currentStart(today, next, now))
+    setPinned(
+      (current) => current && { ...current, selectedStart: currentStart(viewedDay, next, now) },
+    )
     closeDialog()
   }
 
   const handleTakeNote = (period: Period) => {
+    pinHere()
     setDialogPeriod(period)
     setDialogNote(null)
+    // Stamped on open, not on save: once notes are created on open there is no later moment, and a
+    // note begun at 23:58 belongs to the slot it was begun in. Read exactly, not from the last tick.
+    setDialogOccursAt(occursAtFor(period, readNow()))
   }
 
   const handleOpenNote = (period: Period, note: Note) => {
+    pinHere()
     setDialogPeriod(period)
     setDialogNote(note)
+    setDialogOccursAt(note.occursAt)
   }
+
+  const handleSelect = (period: Period) =>
+    setPinned({ dayStart: viewedDayStart, selectedStart: period.start.getTime() })
+
+  const goToToday = () => setPinned(null)
 
   // Placeholder until a create/update endpoint exists.
   const handleSave = (markdown: string) => {
-    console.log(markdown)
+    console.log(markdown, dialogOccursAt)
     closeDialog()
   }
 
@@ -142,12 +178,21 @@ function App({ now: nowProp }: AppProps) {
         </p>
       )}
 
+      {rolledOver && (
+        <p className="app__status" role="status">
+          It is now {formatDayHeading(new Date(currentDayStart))}.{' '}
+          <button type="button" className="app__rollover-action" onClick={goToToday}>
+            Go to today
+          </button>
+        </p>
+      )}
+
       <ScheduleView
-        day={today}
+        day={viewedDay}
         periods={periods}
         now={now}
         selectedPeriod={selectedPeriod}
-        onSelect={(period) => setSelectedStart(period.start.getTime())}
+        onSelect={handleSelect}
         onTakeNote={handleTakeNote}
         onOpenNote={handleOpenNote}
       />

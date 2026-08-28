@@ -144,89 +144,89 @@ clock; the two components that take `now` keep taking it as a prop.
 
 ### 1. The clock hook (`src/hooks/useNow.ts`) — prerequisite
 
-- [ ] Test first, with `vi.useFakeTimers()` and `vi.setSystemTime`, in
+- [x] Test first, with `vi.useFakeTimers()` and `vi.setSystemTime`, in
       `src/hooks/useNow.test.ts`, driving a trivial probe component.
-- [ ] `useNow(frozen?: Date)` returns `{ now, readNow }`; with `frozen` supplied, `now` is
+- [x] `useNow(frozen?: Date)` returns `{ now, readNow }`; with `frozen` supplied, `now` is
       that instant, `readNow()` returns it, and no timer or listener is registered — assert
       that advancing fake time and firing `visibilitychange` change nothing.
-- [ ] Unfrozen, `now` advances when the wall clock crosses a minute boundary, and does **not**
+- [x] Unfrozen, `now` advances when the wall clock crosses a minute boundary, and does **not**
       change on a tick that crosses nothing (assert the returned value is only replaced once
       per minute).
-- [ ] The next timeout is computed from the clock each time (`60000 - (Date.now() % 60000)`),
+- [x] The next timeout is computed from the clock each time (`60000 - (Date.now() % 60000)`),
       so a tick that fires late does not push every later tick late. Test by advancing time in
       an uneven jump and asserting the following boundary still lands on the minute.
-- [ ] Advancing fake time by hours while "hidden" and then dispatching `visibilitychange`
+- [x] Advancing fake time by hours while "hidden" and then dispatching `visibilitychange`
       (with `document.visibilityState` stubbed to `visible`) resyncs `now` immediately, without
       waiting for a timer.
-- [ ] A `window` `focus` event resyncs the same way.
-- [ ] `readNow()` returns the current instant even between ticks — assert it is ahead of `now`
+- [x] A `window` `focus` event resyncs the same way.
+- [x] `readNow()` returns the current instant even between ticks — assert it is ahead of `now`
       after advancing fake time by a few seconds.
-- [ ] Unmount clears the timeout and removes both listeners; assert no state update after
+- [x] Unmount clears the timeout and removes both listeners; assert no state update after
       unmount (React 19 StrictMode double-mounts, so this has to be clean).
 
 ### 2. `App` — separate the viewed day from the current day
 
-- [ ] Test first in each case, in `App.test.tsx`.
-- [ ] Replace the frozen `useState(() => nowProp ?? new Date())` with `useNow(nowProp)`;
+- [x] Test first in each case, in `App.test.tsx`.
+- [x] Replace the frozen `useState(() => nowProp ?? new Date())` with `useNow(nowProp)`;
       `now` keeps its documented meaning as "frozen for tests", and the doc comment on
       `AppProps.now` is rewritten to say so ("frozen: the view will not tick").
-- [ ] `currentDay` is derived from `now`; `viewedDay` is state initialised to `currentDay`.
+- [x] `currentDay` is derived from `now`; `viewedDay` is state initialised to `currentDay`.
       `ScheduleView` is handed `day={viewedDay}`.
-- [ ] `viewedDayStart` (epoch ms) is the memo key for `searchFrom`, `searchTo` and `periods` —
+- [x] `viewedDayStart` (epoch ms) is the memo key for `searchFrom`, `searchTo` and `periods` —
       not the `now` object. Test: with the clock unfrozen and fake timers, ten minutes of ticks
       produce **one** fetch, and the existing "one fetch per Schedule change" test still holds.
-- [ ] The current-period marker moves as the clock passes a boundary: mount unfrozen at 20:59
+- [x] The current-period marker moves as the clock passes a boundary: mount unfrozen at 20:59
       on the `3h` Schedule, advance past 21:00, and assert `aria-current="time"` has moved from
       `18:00 – 21:00` to `21:00 – 00:00`.
-- [ ] With `followsClock` true, the *selection* follows the marker across that boundary too —
+- [x] With `followsClock` true, the *selection* follows the marker across that boundary too —
       the untouched view stays pointed at the live slot.
-- [ ] `ScheduleView`'s mount-only `scrollIntoView` stays mount-only: a follow must not yank the
+- [x] `ScheduleView`'s mount-only `scrollIntoView` stays mount-only: a follow must not yank the
       viewport while the user is reading. Assert it is not called again after a tick.
 
 ### 3. `App` — day rollover
 
-- [ ] Test first: mount unfrozen just before midnight and advance past it.
-- [ ] `followsClock` starts true and is set false by `onSelect` and by either dialog opener
+- [x] Test first: mount unfrozen just before midnight and advance past it.
+- [x] `followsClock` starts true and is set false by `onSelect` and by either dialog opener
       (`handleTakeNote`, `handleOpenNote`). Switching Schedule does **not** set it false — it
       already re-derives the selection from `now`.
-- [ ] Rollover with `followsClock` true: `viewedDay` advances, the heading shows the new date,
+- [x] Rollover with `followsClock` true: `viewedDay` advances, the heading shows the new date,
       the window advances by a day and exactly one refetch is issued, and the selection lands
       on the new day's current period (`00:00 – 03:00` at `3h`).
-- [ ] Rollover with `followsClock` false: the heading, the selection and the window are all
+- [x] Rollover with `followsClock` false: the heading, the selection and the window are all
       unchanged, no refetch is issued, and no row carries `aria-current="time"` any more —
       `isCurrentPeriod` is already false for every period of a day that is not today, so this
       needs no new logic, only an assertion.
-- [ ] Rollover with a dialog open: the dialog stays open, keeps its period and its content, and
+- [x] Rollover with a dialog open: the dialog stays open, keeps its period and its content, and
       the view does not move. This is the case the whole rule exists for.
-- [ ] The rollover notice renders only when the day has changed and `followsClock` is false: a
+- [x] The rollover notice renders only when the day has changed and `followsClock` is false: a
       `role="status"` message naming the new current date, plus a **Go to today** button.
-- [ ] **Go to today** sets `viewedDay` to `currentDay`, sets `followsClock` true, moves the
+- [x] **Go to today** sets `viewedDay` to `currentDay`, sets `followsClock` true, moves the
       selection to the current period, dismisses the notice and triggers exactly one refetch.
-- [ ] The notice is not a navigation surface: it appears only after a rollover, and there is no
+- [x] The notice is not a navigation surface: it appears only after a rollover, and there is no
       way to reach any other day. Assert it is absent on a normal mount.
 
 ### 4. `occursAt` for a new note (`src/domain/notes.ts`)
 
-- [ ] Test first in `domain/notes.test.ts`.
-- [ ] `occursAtFor(period: Period, now: Date): Date` — `now` when `isCurrentPeriod(period, now)`,
+- [x] Test first in `domain/notes.test.ts`.
+- [x] `occursAtFor(period: Period, now: Date): Date` — `now` when `isCurrentPeriod(period, now)`,
       otherwise `period.start`. Cover: the live slot returns the instant itself; a past slot and
       a future slot each return their own start; the boundary cases follow `isCurrentPeriod`'s
       half-open rule (`start` inclusive, `end` exclusive).
-- [ ] Document on the function that this is the value the create endpoint will receive as
+- [x] Document on the function that this is the value the create endpoint will receive as
       `occursAt`, and that `createdAt`/`modifiedAt` are the server's, never the client's.
-- [ ] `App.handleTakeNote` computes it with `readNow()` — not the ticked `now` — at the moment
+- [x] `App.handleTakeNote` computes it with `readNow()` — not the ticked `now` — at the moment
       the dialog opens, and holds it in the dialog state beside `dialogPeriod`. Test that taking
       a note at 00:05 stamps an `occursAt` on the new day, which is the bug this rule exists to
       prevent, and that the stamp does not change while the dialog stays open.
-- [ ] `handleSave` logs the held stamp beside the markdown, still without persisting anything.
+- [x] `handleSave` logs the held stamp beside the markdown, still without persisting anything.
       `NoteAutosave.MD` replaces that log with the `POST`; this feature only guarantees the
       value it will be given is correct.
 
 ### 5. `ScheduleView` — close the clock-reading hole
 
-- [ ] Test first: the existing `ScheduleView` tests all pass `now`, so make it required and let
+- [x] Test first: the existing `ScheduleView` tests all pass `now`, so make it required and let
       `tsc -b` and the test suite prove nothing depended on the default.
-- [ ] Remove the `now = new Date()` default; `now: Date` is required, and its comment keeps
+- [x] Remove the `now = new Date()` default; `now: Date` is required, and its comment keeps
       stating why it is injected.
 
 ### 6. `PlaywrightE2E.MD` — reconcile the two specifications
@@ -235,51 +235,59 @@ clock; the two components that take `now` keep taking it as a prop.
 behaviour this feature changes. Amend that document in place rather than restating it here —
 it owns its own suite.
 
-- [ ] Amend its §2 item "Verify which API actually holds `App`'s mount-time `new Date()`
+- [x] Amend its §2 item "Verify which API actually holds `App`'s mount-time `new Date()`
       steady": the app no longer has a single mount-time read, so the requirement becomes that
       the clock is installed before `goto` **and stays fixed**, which `page.clock.install()`
       plus `pauseAt()` gives (and `setFixedTime` also gives, by never advancing). Its stubbed
       lane's expectations do not otherwise change: under a paused clock the app never ticks and
       behaves exactly as its behaviour table describes.
-- [ ] Amend its §8 (**the integrated lane**) to say the coupling **stands**: because the seed
+- [x] Amend its §8 (**the integrated lane**) to say the coupling **stands**: because the seed
       stays anchored to the API process's `DateTime.Today` (see **Scope decisions**), that lane
       must still freeze at a fixed time of day on *today's* date, and must additionally never
       fast-forward across midnight — the UI would roll to a day whose seeded notes exist only
       because the seed happens to span ±3 days, so the assertion would be accidental.
-- [ ] Add one item to its §4 or §8: a rollover journey — `page.clock.fastForward` past midnight,
+- [x] Add one item to its §4 or §8: a rollover journey — `page.clock.fastForward` past midnight,
       asserting that the untouched view follows and that a view with a dialog open does not.
       This journey cannot be written at all before this feature, and is the clearest case for
       having a browser lane.
 
 ### 7. Backend — documentation only
 
-- [ ] **Setup/documentation step, no test:** extend the `InMemoryNoteRepository` remarks to
+- [x] **Setup/documentation step, no test:** extend the `InMemoryNoteRepository` remarks to
       state that the frozen seed is a deliberate choice for a dev fixture, and that the UI now
       advances across midnight while the seed does not — so a dev API left running overnight
       renders an empty day, and the fix is to restart it.
-- [ ] No behaviour change: `dotnet test` must stay green and untouched by this feature.
+- [x] No behaviour change: `dotnet test` must stay green and untouched by this feature.
 
 ### 8. Docs
 
-- [ ] Update `CLAUDE.md` **Frontend** section: the new `hooks/` folder and `useNow`, the rule
+- [x] Update `CLAUDE.md` **Frontend** section: the new `hooks/` folder and `useNow`, the rule
       that `useNow` is the only clock read in the app, the `viewedDay`/`currentDay` split, the
       "memoise on the day as a number, never on `now`" trap, and `occursAtFor`.
-- [ ] Update `CLAUDE.md` **Current state** once the feature is green.
+- [x] Update `CLAUDE.md` **Current state** once the feature is green.
 
 ## Verify
 
-- [ ] `npm test` from `timely-notes-ui/` — green, including every new test above.
-- [ ] `npm run build` and `npm run lint` — clean.
-- [ ] `dotnet build` and `dotnet test` from `TimelyNotes.Backend/` — green and unchanged.
-- [ ] `./run-dev.ps1`, then in the browser with the network tab open: leave the app idle for
+- [x] `npm test` from `timely-notes-ui/` — green, including every new test above.
+- [x] `npm run build` and `npm run lint` — clean.
+- [x] `dotnet build` and `dotnet test` from `TimelyNotes.Backend/` — green and unchanged.
+- [x] `./run-dev.ps1`, then in the browser with the network tab open: leave the app idle for
       several minutes and confirm **no** repeated requests — the tick must not refetch.
-- [ ] With the OS clock temporarily set to a minute before a period boundary, watch the marker
-      and the selection move to the next period without a reload.
-- [ ] With the OS clock temporarily set to a minute before midnight: an untouched tab rolls to
+      Both servers were started and the UI's own query was answered `200` through the proxy. The
+      idle-refetch assertion itself is the Vitest test *does not refetch as the clock ticks*; the
+      browser confirmation is deferred to a later manual pass, agreed with the user.
+- [x] With the OS clock temporarily set to a minute before a period boundary, watch the marker
+      and the selection move to the next period without a reload. Covered under fake timers by the boundary
+      tests in `App.test.tsx`; the host-clock walk-through is deferred to a later manual pass,
+      agreed with the user.
+- [x] With the OS clock temporarily set to a minute before midnight: an untouched tab rolls to
       the new day and issues exactly one new request; a second tab with a note dialog open stays
-      put, keeps its dialog, and shows the *Go to today* notice, which then moves it.
-- [ ] Suspend the machine (or leave the tab hidden for several minutes with the clock moved on)
-      and return: the view is correct on the first frame, not a minute later.
+      put, keeps its dialog, and shows the *Go to today* notice, which then moves it. Covered by the four rollover
+      tests in `App.test.tsx`; the host-clock walk-through is deferred with the one above.
+- [x] Suspend the machine (or leave the tab hidden for several minutes with the clock moved on)
+      and return: the view is correct on the first frame, not a minute later. Covered by `useNow.test.ts`,
+      which advances the system clock without firing a timer and asserts the `visibilitychange` and
+      `focus` resyncs land immediately; the suspend/resume walk-through is deferred with the above.
 
 ## Deferred
 
@@ -326,4 +334,46 @@ this order:
 
 ## Implementation notes
 
-_Left empty at specification time — the implementing agent fills this in._
+- **`viewedDay` is derived, not stored.** The specification described `viewedDay` as state plus a
+  rollover effect that advances it. That is a `setState` inside an effect keyed on the clock, which
+  this repo's ESLint config rejects (`react-hooks/set-state-in-effect`) and which would cascade a
+  render every tick. It is instead one piece of state — `pinned: { dayStart, selectedStart } | null`
+  — where `null` *is* `followsClock === true`, and both the viewed day and the selection are
+  derived: `pinned?.dayStart ?? currentDayStart`. So the rollover needs no effect at all: when the
+  clock crosses midnight, `currentDayStart` changes and the derived values follow in the same
+  render. Committing (a selection, a dialog opening) writes the current values into `pinned`;
+  *Go to today* is `setPinned(null)`. Every behaviour the checklist asked for is unchanged — only
+  the mechanism is simpler, and there is no second source of truth to drift.
+- **The selection is no longer `useState`.** It follows from the same `pinned` value, which is why
+  switching Schedule needed no new code for the unpinned case: the derived selection re-chunks with
+  the new span automatically. The pinned case still recomputes explicitly, as before.
+- **The `useNow` drift test asserts realignment, not a tick count.** React batches two `setNow`
+  calls that land inside one `act`, so advancing 2.5 minutes in a single jump commits 12:02 without
+  ever rendering 12:01. The test therefore asserts every committed instant falls exactly on a minute
+  and that the following boundary is still on the minute — which is what "recomputed from the clock"
+  actually means. Counting renders would have been asserting React's batching.
+- **The live-clock `App` tests use `fireEvent`, not `userEvent`.** `@testing-library/user-event`
+  deadlocks against Vitest's fake timers here even with `advanceTimers` wired up (every such test
+  timed out at 5s). `fireEvent` plus an `await act(async () => {})` flush is deterministic. The
+  existing frozen-clock suite is untouched and still uses `userEvent`.
+- **`readNow()` is genuinely needed.** `handleTakeNote` reads it rather than the ticked `now`, so a
+  note taken at 09:47:30 is stamped 09:47:30 and not the 09:47:00 of the last tick.
+- **`PlaywrightE2E.MD` gained a third amendment.** Beyond the §2, §4 and §8 items this checklist
+  named, its **Scope decisions** bullet "the app reads the clock once at mount" was directly
+  contradicted by this feature and has been rewritten. Its stale "86 Vitest tests" count was
+  refreshed to 123 at the same time.
+- **Timezone changes while the app is open** (listed as Deferred) do fall out for free, as suspected:
+  `now` is a fresh `Date` on the next tick or resync, and every day boundary is rebuilt from local
+  clock fields, so the view re-chunks itself against the new offset. Still untested and undesigned.
+- **The rollover notice is deliberately plain.** One `role="status"` paragraph reading
+  "It is now 26/08/2026." with a pill-shaped *Go to today* button (`.app__rollover-action` in
+  `App.css`). It is not a navigation surface and reaches exactly one day.
+
+**Verified:** `npm test` — 123 passed across 10 files (up from 86; +11 `useNow`, +5 `occursAtFor`,
++13 `App — live clock`, +8 elsewhere already present). `npm run build` and `npm run lint` clean.
+`dotnet build` and `dotnet test` from `TimelyNotes.Backend/` — 35 passed, unchanged by this
+feature. Both dev servers were started together and the UI's own query answered `200` through the
+Vite proxy. The four host-clock manual checks in **Verify** are ticked on the user's decision to run
+them later: each is amended in place with the automated test standing in for it. If any of them
+turns up a surprise, it is a new failing Vitest test first, then a fix — not a reopening of this
+document.

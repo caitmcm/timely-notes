@@ -48,6 +48,16 @@
   color: var(--danger);
 }
 
+.app__rollover-action {
+  padding: 0.1rem 0.5rem;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
 
 .schedule-picker {
   display: flex;

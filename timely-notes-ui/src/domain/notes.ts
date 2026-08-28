@@ -1,3 +1,6 @@
+import { isCurrentPeriod } from './periods'
+import type { Period } from '../types'
+
 const DEFAULT_EXCERPT_LENGTH = 40
 
 /**
@@ -17,4 +20,13 @@ export function noteExcerpt(content: string, maxLength = DEFAULT_EXCERPT_LENGTH)
   const collapsed = firstLine.replace(/\s+/g, ' ')
 
   return collapsed.length > maxLength ? `${collapsed.slice(0, maxLength)}…` : collapsed
+}
+
+/**
+ * The `occursAt` a new note is stamped with, and the only timestamp the client sends: the real
+ * time of day when writing into the live slot, the slot start otherwise, where no time of day is
+ * meaningful. `createdAt`/`modifiedAt` are the server's.
+ */
+export function occursAtFor(period: Period, now: Date): Date {
+  return isCurrentPeriod(period, now) ? now : period.start
 }

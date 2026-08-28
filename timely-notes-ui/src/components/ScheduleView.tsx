@@ -7,7 +7,7 @@ interface ScheduleViewProps {
   day: Date
   periods: Period[]
   /** Injected so tests are deterministic — never read the clock inside the component. */
-  now?: Date
+  now: Date
   selectedPeriod: Period | undefined
   onSelect: (period: Period) => void
   onTakeNote: (period: Period) => void
@@ -18,7 +18,7 @@ interface ScheduleViewProps {
 function ScheduleView({
   day,
   periods,
-  now = new Date(),
+  now,
   selectedPeriod,
   onSelect,
   onTakeNote,

@@ -10,7 +10,7 @@ This layer sits after implementation, not inside it. TDD stays the implementatio
 stays its tool; Playwright is what confirms the assembled app does what the specification promised
 once the loop is done.
 
-Today the frontend has 86 Vitest tests running in jsdom. They are good tests, and they stay. But
+Today the frontend has 123 Vitest tests running in jsdom. They are good tests, and they stay. But
 jsdom is a simulation, and three things the app genuinely depends on are simulated away:
 
 - **The native `<dialog>`.** `src/test/setup.ts` stubs `showModal`/`close` because jsdom has
@@ -52,8 +52,10 @@ API and runs the handful of specs that need it.
     slow and flaky lane.
 - **Chromium only.** Firefox and WebKit are deferred; the app has no browser-specific code, and each
   extra engine is another multi-hundred-megabyte download in an agent's environment.
-- **Time is frozen and the timezone is pinned.** The app reads the clock once at mount and does all
-  its bucketing in local time, so an E2E run is only reproducible if both are fixed.
+- **Time is frozen and the timezone is pinned.** Since `LiveClock.MD` the app reads the clock
+  continuously — `useNow` ticks on the minute and resyncs on visibility and focus — and does all its
+  bucketing in local time, so an E2E run is only reproducible if the clock is both fixed and held
+  fixed, and the timezone pinned.
   `playwright.config.ts` pins `timezoneId: 'Europe/London'` and `locale: 'en-GB'`; the harness fixes
   the clock at **20:20 on 25/08/2026** — the instant the `FrontendSkeleton` mockup is drawn at — so
   the E2E specs and the unit tests describe the same screen.
@@ -263,9 +265,12 @@ buckets; the E2E column is what §3–§8 implement.
       heading can both be asserted, and two notes in one period so ordering can be.
 - [ ] `e2e/fixtures/app.ts`: extend `test` with a `page` that fixes the clock at 20:20 on
       25/08/2026 **before** the first navigation.
-  - Verify which API actually holds `App`'s mount-time `new Date()` steady — `page.clock.setFixedTime`
-    or `install` plus `pauseAt` — and record the choice and the reason in the implementation notes.
-    Prove it with a spec that would fail on a wall-clock read.
+  - Since `LiveClock.MD`, the app has no single mount-time `new Date()`: `useNow` ticks on the
+    minute and resyncs on visibility and focus. The requirement is therefore that the clock is
+    installed **before** `goto` and then **stays fixed** — `page.clock.install()` plus `pauseAt()`,
+    or `setFixedTime`, which never advances. Record the choice and the reason in the implementation
+    notes, and prove it with a spec that would fail on a wall-clock read. Under a paused clock the
+    app never ticks, so the stubbed lane's behaviour table is otherwise unchanged.
 - [ ] `api` fixture over `page.route('**/api/schedules/*/notes*')`: records intercepted requests,
       replies from the fixtures by short name, and can be told to reply with a given status or after
       a delay. Register the route before `goto`, so the mount-time fetch is caught.
@@ -298,6 +303,13 @@ buckets; the E2E column is what §3–§8 implement.
       `window.scrollY` is unchanged, which is what the handler's `preventDefault` is for.
 - [ ] Pressing `Enter` while focus is on a button inside a row does not re-select it (the
       `event.target === event.currentTarget` guard).
+- [ ] **Midnight rollover** (`page.clock.fastForward` past 00:00, stubbed lane only, so the fixture
+      window can move with the view). An untouched view follows: the heading becomes 26/08/2026, the
+      selection lands on `00:00 – 03:00` and one further request is made. A view with a note dialog
+      open does not: the dialog stays open on its own period, the heading stays on 25/08/2026, no
+      row carries `aria-current="time"`, and a `Go to today` notice appears which then moves it.
+      This journey cannot be written before `LiveClock.MD` and is the clearest case for a browser
+      lane — jsdom and fake timers can only approximate it.
 
 ### 5. Schedule switching and the API contract — `e2e/schedule.spec.ts`, `e2e/api-contract.spec.ts`
 
@@ -351,6 +363,11 @@ Small on purpose. These specs use the **real** seeded data, which is anchored to
 `DateTime.Today`, so they must not freeze the clock on 25/08/2026 — they freeze it at a fixed
 *time of day* on *today's* date, which keeps period assertions deterministic while staying in step
 with the seed.
+
+`LiveClock.MD` deliberately left that seed frozen, so the coupling **stands**. This lane must also
+never fast-forward across midnight: the UI would roll to a day whose seeded notes exist only because
+the seed happens to span ± 3 days, making the assertion accidental. The rollover journey belongs to
+the stubbed lane (§4).
 
 - [ ] Confirm a readiness URL for the API's `webServer` (`/swagger/index.html` under the `http`
       launch profile) and record what was used. The notes route needs query parameters, so it is not

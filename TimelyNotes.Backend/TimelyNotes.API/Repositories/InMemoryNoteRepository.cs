@@ -3,8 +3,11 @@ using TimelyNotes.API.Models;
 namespace TimelyNotes.API.Repositories;
 
 /// <summary>
-/// Dev-only store, seeded over local midnight today ± 3 days. "Today" is frozen when the singleton
-/// is built, so a server left running across midnight keeps serving the previous day — restart it.
+/// Dev-only store, seeded over local midnight today ± 3 days. "Today" is deliberately frozen when
+/// the singleton is built: re-anchoring per request would mint fresh ids under an open dialog, for
+/// a fixture that disappears once a real store lands. The UI's clock does advance across midnight,
+/// so a server left running overnight renders an empty day that looks like a frontend bug —
+/// restart it.
 /// </summary>
 public class InMemoryNoteRepository : INoteRepository
 {

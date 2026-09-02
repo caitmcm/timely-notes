@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
-import { getNotesBySchedule } from './api/notesApi'
+import { useMemo, useState } from 'react'
 import { occursAtFor } from './domain/notes'
+import { addDays, dayStartOf, eachDay } from './domain/days'
 import { assignNotes, buildPeriods, findCurrentPeriod, formatDayHeading } from './domain/periods'
 import { DEFAULT_SCHEDULE, SCHEDULES } from './domain/schedules'
 import { useNow } from './hooks/useNow'
+import { useScheduleNotes } from './hooks/useScheduleNotes'
 import SchedulePicker from './components/SchedulePicker'
 import ScheduleView from './components/ScheduleView'
 import NoteDialog from './components/NoteDialog'
@@ -25,22 +26,21 @@ interface Pinned {
   selectedStart: number
 }
 
-interface LoadedNotes {
-  shortName: ScheduleShortName
-  notes: Note[]
-  error: string | null
+/** Rendered days, inclusive both ends. Grown a day at a time as the user reaches an edge. */
+interface DayRange {
+  first: number
+  last: number
 }
 
-/** Stable identity, so `periods` isn't rebuilt on every render while a fetch is in flight. */
-const NO_NOTES: Note[] = []
+/** Where the user has scrolled to, remembered against the focus day it was observed under. */
+interface Anchor {
+  forFocus: number
+  dayStart: number
+}
 
-const startOfDay = (at: Date) => new Date(at.getFullYear(), at.getMonth(), at.getDate())
-
-/** Local midnight `days` from the one `at` falls in. Negative goes backwards. */
-const addDays = (at: Date, days: number) =>
-  new Date(at.getFullYear(), at.getMonth(), at.getDate() + days)
-
-const WINDOW_DAYS_EITHER_SIDE = 1
+/** Days loaded past the rendered edge: two in the direction of travel, one behind. */
+const PREFETCH_DAYS = 2
+const NEIGHBOUR_DAYS = 1
 
 function currentStart(day: Date, schedule: Schedule, now: Date): number {
   const periods = buildPeriods(day, schedule.spanHours)
@@ -52,62 +52,64 @@ function App({ now: nowProp }: AppProps) {
   const { now, readNow } = useNow(nowProp)
 
   const [schedule, setSchedule] = useState<Schedule>(DEFAULT_SCHEDULE)
-  const [loaded, setLoaded] = useState<LoadedNotes | null>(null)
   const [pinned, setPinned] = useState<Pinned | null>(null)
+  const [anchor, setAnchor] = useState<Anchor | null>(null)
+  const [direction, setDirection] = useState(0)
 
   // Everything derived keys off the day as a number, never off `now`: `now` is a fresh Date every
   // minute, so memoising on it would rebuild the window and refire the fetch on every tick.
-  const currentDayStart = useMemo(() => startOfDay(now).getTime(), [now])
+  const currentDayStart = useMemo(() => dayStartOf(now), [now])
 
   // Unpinned, the view *is* the clock — derived rather than stored, so a rollover moves it with no
   // effect to fire and nothing to keep in step.
-  const viewedDayStart = pinned?.dayStart ?? currentDayStart
-  const viewedDay = useMemo(() => new Date(viewedDayStart), [viewedDayStart])
+  const focusDayStart = pinned?.dayStart ?? currentDayStart
+  const focusDay = useMemo(() => new Date(focusDayStart), [focusDayStart])
 
-  // Three whole local days are fetched but only the viewed one is rendered — groundwork for scrolling.
-  const searchFrom = useMemo(() => addDays(viewedDay, -WINDOW_DAYS_EITHER_SIDE), [viewedDay])
-  const searchTo = useMemo(() => addDays(viewedDay, WINDOW_DAYS_EITHER_SIDE + 1), [viewedDay])
+  const [range, setRange] = useState<DayRange>(() => ({
+    first: focusDayStart,
+    last: focusDayStart,
+  }))
 
-  const selectedStart = pinned?.selectedStart ?? currentStart(viewedDay, schedule, now)
+  // A focus day outside the rendered days means the view was moved rather than scrolled — a
+  // rollover, or Go to today from a week back — so it starts again there instead of spanning the gap.
+  const rendered: DayRange =
+    focusDayStart >= range.first && focusDayStart <= range.last
+      ? range
+      : { first: focusDayStart, last: focusDayStart }
+
+  const wantFrom = addDays(rendered.first, -(direction < 0 ? PREFETCH_DAYS : NEIGHBOUR_DAYS))
+  const wantTo = addDays(rendered.last, direction > 0 ? PREFETCH_DAYS : NEIGHBOUR_DAYS)
+
+  const { notesFor, isLoaded, error } = useScheduleNotes(schedule, wantFrom, wantTo)
+
+  const selectedStart = pinned?.selectedStart ?? currentStart(focusDay, schedule, now)
 
   const [dialogPeriod, setDialogPeriod] = useState<Period | null>(null)
   const [dialogNote, setDialogNote] = useState<Note | null>(null)
   const [dialogOccursAt, setDialogOccursAt] = useState<Date | null>(null)
 
-  useEffect(() => {
-    const controller = new AbortController()
-
-    getNotesBySchedule(schedule.shortName, searchFrom, searchTo, controller.signal)
-      .then((notes) => setLoaded({ shortName: schedule.shortName, notes, error: null }))
-      .catch(() => {
-        if (controller.signal.aborted) {
-          return
-        }
-
-        setLoaded({
-          shortName: schedule.shortName,
-          notes: NO_NOTES,
-          error: `Could not load notes for the ${schedule.label} schedule.`,
-        })
-      })
-
-    return () => controller.abort()
-  }, [schedule, searchFrom, searchTo])
-
-  // Loading derived from which Schedule the last result was for — one less piece of state to keep
-  // in step with the request.
-  const settled = loaded?.shortName === schedule.shortName ? loaded : null
-  const notes = settled?.notes ?? NO_NOTES
-  const error = settled?.error ?? null
-
   // App owns the domain calls, so everything below it is handed finished periods.
-  const periods = useMemo(
-    () => assignNotes(buildPeriods(viewedDay, schedule.spanHours), notes),
-    [viewedDay, schedule, notes],
+  const days = useMemo(
+    () =>
+      eachDay(rendered.first, rendered.last).map((dayStart) => ({
+        dayStart,
+        periods: assignNotes(
+          buildPeriods(new Date(dayStart), schedule.spanHours),
+          notesFor(dayStart),
+        ),
+        isLoading: !isLoaded(dayStart),
+      })),
+    [rendered.first, rendered.last, schedule, notesFor, isLoaded],
   )
 
-  const selectedPeriod = periods.find((period) => period.start.getTime() === selectedStart)
-  const rolledOver = pinned !== null && pinned.dayStart !== currentDayStart
+  const selectedPeriod = days
+    .flatMap((day) => day.periods)
+    .find((period) => period.start.getTime() === selectedStart)
+
+  // The anchor is discarded the moment the focus day moves, so a rollover, a selection on another
+  // day and Go to today each correct it in the same render.
+  const anchorDayStart = anchor?.forFocus === focusDayStart ? anchor.dayStart : focusDayStart
+  const awayFromToday = anchorDayStart !== currentDayStart
 
   const closeDialog = () => {
     setDialogPeriod(null)
@@ -115,8 +117,9 @@ function App({ now: nowProp }: AppProps) {
     setDialogOccursAt(null)
   }
 
-  /** Stop following the clock, leaving the view exactly where the user is reading it. */
-  const pinHere = () => setPinned({ dayStart: viewedDayStart, selectedStart })
+  /** Stop following the clock, on the day the acted-on row belongs to. */
+  const pinTo = (period: Period, selection = selectedStart) =>
+    setPinned({ dayStart: dayStartOf(period.start), selectedStart: selection })
 
   const handleScheduleChange = (shortName: ScheduleShortName) => {
     const next = SCHEDULES.find((candidate) => candidate.shortName === shortName)
@@ -128,13 +131,13 @@ function App({ now: nowProp }: AppProps) {
     // Re-chunking the day can leave a pinned selection off a boundary, so start again from now.
     setSchedule(next)
     setPinned(
-      (current) => current && { ...current, selectedStart: currentStart(viewedDay, next, now) },
+      (current) => current && { ...current, selectedStart: currentStart(focusDay, next, now) },
     )
     closeDialog()
   }
 
   const handleTakeNote = (period: Period) => {
-    pinHere()
+    pinTo(period)
     setDialogPeriod(period)
     setDialogNote(null)
     // Stamped on open, not on save: once notes are created on open there is no later moment, and a
@@ -143,16 +146,32 @@ function App({ now: nowProp }: AppProps) {
   }
 
   const handleOpenNote = (period: Period, note: Note) => {
-    pinHere()
+    pinTo(period)
     setDialogPeriod(period)
     setDialogNote(note)
     setDialogOccursAt(note.occursAt)
   }
 
-  const handleSelect = (period: Period) =>
-    setPinned({ dayStart: viewedDayStart, selectedStart: period.start.getTime() })
+  const handleSelect = (period: Period) => pinTo(period, period.start.getTime())
 
-  const goToToday = () => setPinned(null)
+  const handleReachStart = () => {
+    setRange({ first: addDays(rendered.first, -1), last: rendered.last })
+    setDirection(-1)
+  }
+
+  const handleReachEnd = () => {
+    setRange({ first: rendered.first, last: addDays(rendered.last, 1) })
+    setDirection(1)
+  }
+
+  const handleAnchorDay = (dayStart: number) =>
+    setAnchor({ forFocus: focusDayStart, dayStart })
+
+  const goToToday = () => {
+    setPinned(null)
+    setRange({ first: currentDayStart, last: currentDayStart })
+    setAnchor(null)
+  }
 
   // Placeholder until a create/update endpoint exists.
   const handleSave = (markdown: string) => {
@@ -167,18 +186,13 @@ function App({ now: nowProp }: AppProps) {
         <SchedulePicker selected={schedule.shortName} onChange={handleScheduleChange} />
       </header>
 
-      {settled === null && (
-        <p className="app__status" role="status">
-          Loading notes…
-        </p>
-      )}
       {error && (
         <p className="app__status app__status--error" role="alert">
           {error}
         </p>
       )}
 
-      {rolledOver && (
+      {awayFromToday && (
         <p className="app__status" role="status">
           It is now {formatDayHeading(new Date(currentDayStart))}.{' '}
           <button type="button" className="app__rollover-action" onClick={goToToday}>
@@ -188,13 +202,16 @@ function App({ now: nowProp }: AppProps) {
       )}
 
       <ScheduleView
-        day={viewedDay}
-        periods={periods}
+        days={days}
         now={now}
+        focusDayStart={focusDayStart}
         selectedPeriod={selectedPeriod}
         onSelect={handleSelect}
         onTakeNote={handleTakeNote}
         onOpenNote={handleOpenNote}
+        onReachStart={handleReachStart}
+        onReachEnd={handleReachEnd}
+        onAnchorDay={handleAnchorDay}
       />
 
       <NoteDialog

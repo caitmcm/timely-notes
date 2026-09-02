@@ -17,14 +17,20 @@
   --gutter: 4.25rem;
 }
 
+/* Full height and no page scroll: the schedule is the only thing that scrolls. */
 .app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
   max-width: 30rem;
   margin: 0 auto;
-  padding: 1.5rem 1rem 3rem;
+  padding: 1.5rem 1rem;
+  box-sizing: border-box;
   color: var(--ink);
 }
 
 .app__header {
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -39,6 +45,7 @@
 }
 
 .app__status {
+  flex: 0 0 auto;
   margin: 0 0 0.75rem;
   font-size: 0.875rem;
   color: var(--ink-muted);
@@ -88,44 +95,52 @@
 
 
 .schedule-view {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border: 1px solid var(--line-strong);
   border-radius: 0.75rem;
   background: var(--surface);
 }
 
-.schedule-view__day {
+/*
+ * Markers the observer watches; reaching one grows the view by a day. A pixel tall, not zero: a
+ * zero-height box flush with the end of the scroll content never reports as intersecting.
+ */
+.schedule-view__sentinel {
+  height: 1px;
+}
+
+.day-section__day {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
   margin: 0;
   padding: 0.6rem 0.75rem;
   font-size: 0.95rem;
   font-weight: 600;
   border-bottom: 2px solid var(--line-strong);
+  background: var(--surface);
 }
 
-.schedule-view__periods {
+.day-section__loading {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--ink-muted);
+}
+
+.day-section__periods {
   height: var(--day-height);
   margin: 0;
   padding: 0;
   list-style: none;
   display: flex;
   flex-direction: column;
-}
-
-.schedule-view__boundary {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  padding: 0.6rem 0.75rem;
-  border-top: 2px solid var(--line-strong);
-  font-size: 0.95rem;
-}
-
-.schedule-view__boundary-date {
-  font-weight: 600;
-}
-
-.schedule-view__boundary-time {
-  padding-left: 0.5rem;
-  color: var(--ink-muted);
 }
 
 

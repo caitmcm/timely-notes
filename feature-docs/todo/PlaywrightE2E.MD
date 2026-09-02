@@ -10,15 +10,17 @@ This layer sits after implementation, not inside it. TDD stays the implementatio
 stays its tool; Playwright is what confirms the assembled app does what the specification promised
 once the loop is done.
 
-Today the frontend has 123 Vitest tests running in jsdom. They are good tests, and they stay. But
+Today the frontend has 176 Vitest tests running in jsdom. They are good tests, and they stay. But
 jsdom is a simulation, and three things the app genuinely depends on are simulated away:
 
 - **The native `<dialog>`.** `src/test/setup.ts` stubs `showModal`/`close` because jsdom has
   neither. So `NoteDialog`'s modality, its focus behaviour and its `onCancel` (Escape) path have
   never been executed — the Escape-to-close wiring is untested code.
 - **Layout.** `App.css` makes the day column a fixed-height flex stack so that a 6h row is exactly
-  six times a 1h row, and `ScheduleView` scrolls the selected row into view on mount. jsdom has no
-  layout engine: every box is 0×0 and `scrollIntoView` is a no-op. Both are asserted only by eye.
+  six times a 1h row, `DaySection` scrolls the selected row into view on mount, and the schedule
+  grows a day at a time as its scroll container reaches an edge — an IntersectionObserver against
+  real layout. jsdom has no layout engine: every box is 0×0, `scrollIntoView` is a no-op and the
+  observer is a stub driven by hand. All of it is asserted only by eye.
 - **MDXEditor.** The dialog tests mount the real editor, but only ever read text out of it. Typing,
   the toolbar and the markdown shortcuts — the whole reason the editor is there — are unexercised.
 
@@ -194,7 +196,7 @@ buckets; the E2E column is what §3–§8 implement.
 | `ScheduleView` → one row per period | 24 / 8 / 4 rows at `1h` / `3h` / `6h` | Through a real schedule switch, not a prop |
 | `ScheduleView` → exactly one row current | Exactly one `aria-current` row, named `18:00 – 21:00` | — |
 | `ScheduleView` → one row selected, holding Note | Exactly one Note button on the page, inside the selected row | — |
-| `ScheduleView` → closes the day at the next 00:00 | The boundary reads `26/08/2026` and `00:00` | — |
+| `ScheduleView` → grows as the container is scrolled | Scrolling to the bottom appends `26/08/2026`; scrolling to the top prepends `24/08/2026` | Real layout and a real IntersectionObserver |
 | `PeriodRow` → start time in the gutter | The gutter reads `00:00` … `21:00` in order at `3h` | Real DOM order |
 | `PeriodRow` → note labelled with time and excerpt | A note button reads `19:30 Stand-up`, excerpted from markdown | — |
 | `PeriodRow` → opens a note without re-selecting | Clicking a note in an **unselected** row opens it titled with that row's range and leaves the selection where it was | `stopPropagation` against a real event path |
@@ -280,7 +282,7 @@ buckets; the E2E column is what §3–§8 implement.
 
 ### 3. Day view — `e2e/day-view.spec.ts`
 
-- [ ] The day is headed `25/08/2026` and closed by a boundary showing `26/08/2026` at `00:00`.
+- [ ] The day is headed `25/08/2026`, and it is the only day rendered until the view is scrolled.
 - [ ] `3h` renders 8 rows, and the gutter reads `00:00` … `21:00` in order.
 - [ ] Exactly one row carries `aria-current="time"`, and it is `18:00 – 21:00`.
 - [ ] Seeded notes render in the row their `occursAt` falls in, though their `createdAt` is 28/08.

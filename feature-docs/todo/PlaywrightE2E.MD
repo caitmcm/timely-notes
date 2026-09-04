@@ -10,7 +10,7 @@ This layer sits after implementation, not inside it. TDD stays the implementatio
 stays its tool; Playwright is what confirms the assembled app does what the specification promised
 once the loop is done.
 
-Today the frontend has 176 Vitest tests running in jsdom. They are good tests, and they stay. But
+Today the frontend has 221 Vitest tests running in jsdom. They are good tests, and they stay. But
 jsdom is a simulation, and three things the app genuinely depends on are simulated away:
 
 - **The native `<dialog>`.** `src/test/setup.ts` stubs `showModal`/`close` because jsdom has
@@ -18,8 +18,8 @@ jsdom is a simulation, and three things the app genuinely depends on are simulat
   never been executed — the Escape-to-close wiring is untested code.
 - **Layout.** `App.css` makes the day column a fixed-height flex stack so that a 6h row is exactly
   six times a 1h row, `DaySection` scrolls the selected row into view on mount, and the three-day
-  column is scrolled end to end between the two `Calendar` buttons. jsdom has no layout engine:
-  every box is 0×0 and `scrollIntoView` is a no-op. All of it is asserted only by eye.
+  column is scrolled end to end beneath a navigation toolbar that stays put. jsdom has no layout
+  engine: every box is 0×0 and `scrollIntoView` is a no-op. All of it is asserted only by eye.
 - **MDXEditor.** The dialog tests mount the real editor, but only ever read text out of it. Typing,
   the toolbar and the markdown shortcuts — the whole reason the editor is there — are unexercised.
 
@@ -115,8 +115,8 @@ timely-notes-ui/
 └── e2e/
     ├── fixtures/
     │   ├── notes.ts              # wire-shaped fixtures, mirroring the Vitest ones
-    │   ├── DayView.ts            # page object — locators by accessible role/name
-    │   └── app.ts                # extended `test`: clock, API stubbing, DayView
+    │   ├── ScheduleView.ts       # page object — locators by accessible role/name, scoped per day
+    │   └── app.ts                # extended `test`: clock, API stubbing, ScheduleView
     ├── day-view.spec.ts          # §3
     ├── selection.spec.ts         # §4
     ├── schedule.spec.ts          # §5
@@ -135,17 +135,33 @@ its behaviour:
 - **`page`** (overridden) — installs the fixed clock *before* the first navigation, since `App`
   captures `new Date()` in a lazy `useState` initialiser on mount. A clock installed after `goto` is
   too late, and the spec silently becomes wall-clock-dependent.
-- **`api`** — a small controller over `page.route('**/api/schedules/*/notes*')` that records every
-  intercepted request (so specs can assert *what was asked for* and *how many times*) and lets a
-  spec choose the reply: notes per short name, an HTTP status, or a delay. Registered before
+- **`api`** — a small controller over **two** routes, not one, that records every intercepted
+  request (so specs can assert *what was asked for* and *how many times*) and lets a spec choose the
+  reply: notes or day counts per short name, an HTTP status, or a delay. Registered before
   navigation; the default reply is the standard fixture set.
-- **`dayView`** — the page object.
+  - `**/api/schedules/*/notes*` — the list route.
+  - `**/api/schedules/*/note-days*` — the counts route. **A separate pattern is required**:
+    `notes*` does not match `note-days`, so a single route leaves the calendar's requests
+    unintercepted, escaping to a backend the stubbed lane does not run.
+- **`scheduleView`** — the page object.
 
-`e2e/fixtures/DayView.ts` exposes locators, not assertions: `rows`, `row('18:00 – 21:00')`,
-`selectedRow`, `currentRow`, `noteButton`, `note('09:00 Morning block')`, `schedule('6h')`,
-`dialog`, `editor`, `save`, `cancel`, `status`, `error`, `dayBoundary`. Every one resolves by ARIA
-role and accessible name — the same handles `App.test.tsx` uses — so a change that breaks the
-accessibility of a row breaks both suites, which is the point.
+`e2e/fixtures/ScheduleView.ts` exposes locators, not assertions. Since `CalendarNavigation.MD`
+**three days render at once**, so every per-day handle is reached through a day scope and a
+page-wide `rows` would match 24 / 12 / 72 rows rather than 24 / 8 / 4:
+
+- **Per day** — `day('25/08/2026')` returns the `DaySection` scope, and from it `rows`,
+  `row('18:00 – 21:00')`, `selectedRow`, `currentRow`, `noteButton`,
+  `note('09:00 Morning block')`, `status`.
+- **Page-wide** — `days` (the day headings in order), `schedule('6h')`, `calendarButton`,
+  `goToTodayButton`, `rolloverNotice`, `dialog`, `editor`, `save`, `cancel`, `error`, `scroller`,
+  and the calendar's own `month`, `previousMonth`, `nextMonth`, `gridDay(17)`.
+
+Every one resolves by ARIA role and accessible name — the same handles `App.test.tsx` uses — so a
+change that breaks the accessibility of a row breaks both suites, which is the point. The one
+exception is the scroll container, which has no role and is reached by its `data-testid`.
+
+**Row counts in §3–§7 are per day, not per page.** "8 rows at `3h`" means eight inside
+`day('25/08/2026')`. An unscoped count is a bug in the spec, not a change in the app.
 
 `e2e/fixtures/notes.ts` holds notes in **wire shape** (ISO strings with an offset, exactly as
 `NoteResponse` serialises), because they are fed to `route.fulfill`, not to a component. They mirror
@@ -181,7 +197,7 @@ buckets; the E2E column is what §3–§8 implement.
 | `App` → asks for a three-day window, half-open | The intercepted request carries `searchFrom` = 24/08 00:00+01:00 and `searchTo` = 27/08 00:00+01:00 | The URL the browser actually built, `+` percent-encoded on the wire |
 | `App` → fetches once per schedule change | Switching `3h`→`6h` produces exactly two requests, in order | Real effect scheduling, no `act()` shimming |
 | `App` → places notes by `occursAt` … another day | The 09:00 row holds "09:00 Morning block…" though it was written on 28/08 | Same assertion, end to end through parse → bucket → render |
-| `App` → refetches with the new short name | `6h` re-chunks the day to 4 rows and asks for `s6` | — |
+| `App` → refetches with the new short name | `6h` re-chunks each day to 4 rows and asks for `s6` | — |
 | `App` → shows an error instead of a blank page | A 500 shows the alert *and* the 8 empty rows stay | Real fetch rejection, not a resolved mock |
 | `App` → selects the period holding the current time | On load, `18:00 – 21:00` is selected, is `aria-current="time"`, and holds Note | Clock frozen in the browser, not injected as a prop |
 | `App` → moves selection and the Note button | Clicking `06:00 – 09:00` moves selection and the button; `aria-current` stays at 18:00 | Real click, real bubbling |
@@ -192,8 +208,8 @@ buckets; the E2E column is what §3–§8 implement.
 | `App` → opens blank after closing an existing one | Open, Cancel, Note → empty editor | Exercises the real remount-by-`key` |
 | `App` → logs the markdown and closes on save | Save closes the dialog and emits the markdown on the console | Console captured from a real page |
 | `App` → keeps selection on the current period after switching | `1h` re-anchors selection to `20:00 – 21:00` | — |
-| `ScheduleView` → heads the day with its date | `25/08/2026` heads the column | — |
-| `ScheduleView` → one row per period | 24 / 8 / 4 rows at `1h` / `3h` / `6h` | Through a real schedule switch, not a prop |
+| `ScheduleView` → heads the day with its date | `24/08/2026`, `25/08/2026` and `26/08/2026` head their sections, in order | — |
+| `ScheduleView` → one row per period | 24 / 8 / 4 rows **per day** at `1h` / `3h` / `6h` | Through a real schedule switch, not a prop |
 | `ScheduleView` → exactly one row current | Exactly one `aria-current` row, named `18:00 – 21:00` | — |
 | `ScheduleView` → one row selected, holding Note | Exactly one Note button on the page, inside the selected row | — |
 | `ScheduleView` → three days, bounded | `24/08/2026`, `25/08/2026` and `26/08/2026` render; scrolling to either end adds no day and issues no request | Real layout: the container's height never changes mid-scroll |
@@ -238,6 +254,17 @@ buckets; the E2E column is what §3–§8 implement.
 
 ## Checklist
 
+> **Amended after `CalendarNavigation.MD` shipped.** This specification was written against a
+> single-day view with an unbounded scroll. The app now renders **three days at once** under a fixed
+> navigation toolbar, and has a second read route. What changed here, so a reader who knew the old
+> version can spot it: every row count is **per day** and every row locator is scoped through
+> `day(heading)`; the page object is `ScheduleView.ts`, not `DayView.ts`; the `api` fixture needs a
+> **second** route for `note-days`; the clock must be `install()` + `pauseAt()` rather than
+> `setFixedTime`, because §4 fast-forwards; `Go to today` is always in the toolbar, so §4 and §5b
+> assert on the *notice* appearing, never the button; §5b is new; and the mount scroll belongs to
+> `DaySection`, not `ScheduleView`. Nothing about the two lanes, the harness shape or the ordering
+> rule changed.
+
 ### 1. Tooling and configuration (prerequisite)
 
 - [ ] Add `@playwright/test` as a dev dependency of `timely-notes-ui`.
@@ -270,34 +297,58 @@ buckets; the E2E column is what §3–§8 implement.
       25/08/2026 **before** the first navigation.
   - Since `LiveClock.MD`, the app has no single mount-time `new Date()`: `useNow` ticks on the
     minute and resyncs on visibility and focus. The requirement is therefore that the clock is
-    installed **before** `goto` and then **stays fixed** — `page.clock.install()` plus `pauseAt()`,
-    or `setFixedTime`, which never advances. Record the choice and the reason in the implementation
-    notes, and prove it with a spec that would fail on a wall-clock read. Under a paused clock the
-    app never ticks, so the stubbed lane's behaviour table is otherwise unchanged.
-- [ ] `api` fixture over `page.route('**/api/schedules/*/notes*')`: records intercepted requests,
-      replies from the fixtures by short name, and can be told to reply with a given status or after
-      a delay. Register the route before `goto`, so the mount-time fetch is caught.
-- [ ] `e2e/fixtures/DayView.ts`: locators only, all by ARIA role and accessible name, matching the
-      handles the Vitest suite uses.
+    installed **before** `goto` and then **stays fixed**. Use `page.clock.install()` plus
+    `pauseAt()` — **not** `setFixedTime`: §4's rollover journey calls `clock.fastForward`, which
+    needs an installed clock, so the choice is already forced. Prove the freeze with a spec that
+    would fail on a wall-clock read. Under a paused clock the app never ticks, so the stubbed lane's
+    behaviour table is otherwise unchanged.
+- [ ] `api` fixture over **both** `page.route('**/api/schedules/*/notes*')` and
+      `page.route('**/api/schedules/*/note-days*')`: records intercepted requests, replies from the
+      fixtures by short name, and can be told to reply with a given status or after a delay.
+      Register both routes before `goto`, so the mount-time fetch is caught. The second pattern is
+      not optional — `notes*` does not match `note-days`, and §5b cannot assert on counts without
+      it.
+- [ ] Day-count fixtures in `{ day, count }` wire shape (`day` an offset-carrying instant at local
+      midnight, as `NoteDayResponse` serialises), covering the August 2026 grid: a marked day, a day
+      with two notes, and an unmarked day, so §5b can assert markers and their absence.
+- [ ] `e2e/fixtures/ScheduleView.ts`: locators only, all by ARIA role and accessible name (bar the
+      scroll container's `data-testid`), matching the handles the Vitest suite uses, and scoped per
+      day via `day(heading)` as **The harness** describes.
 - [ ] All three fixtures are exercised by at least one spec in §3 before this section is ticked.
 
 ### 3. Day view — `e2e/day-view.spec.ts`
 
-- [ ] Three days render — `24/08/2026`, `25/08/2026` and `26/08/2026` — with the focus day in view.
-- [ ] `3h` renders 8 rows, and the gutter reads `00:00` … `21:00` in order.
-- [ ] Exactly one row carries `aria-current="time"`, and it is `18:00 – 21:00`.
+Every row assertion here is scoped to `day('25/08/2026')` unless it says otherwise.
+
+- [ ] Three days render — `24/08/2026`, `25/08/2026` and `26/08/2026`, in that order — with the
+      focus day in view.
+- [ ] `3h` renders 8 rows **in each day**, and the focus day's gutter reads `00:00` … `21:00` in
+      order. (24 rows on the page; assert per day, not per page.)
+- [ ] Exactly one row **on the page** carries `aria-current="time"`, it is `18:00 – 21:00`, and it
+      is inside `25/08/2026` — the neighbouring days hold no current row.
 - [ ] Seeded notes render in the row their `occursAt` falls in, though their `createdAt` is 28/08.
+- [ ] A note whose `occursAt` is on 26/08 renders in *that* day's section, not the focus day's —
+      the three-day equivalent of the unit suite's "day it occurs on, not the day in view".
 - [ ] Two notes in one period list oldest-first.
 - [ ] A note button is labelled with its time and a one-line excerpt (`19:30 Stand-up`).
 - [ ] A period with no notes contains no buttons.
-- [ ] `Loading notes…` is shown while a delayed reply is in flight, and is gone once it lands.
-- [ ] A 500 shows the error alert and still renders the 8 rows.
+- [ ] `Loading notes…` is shown while a delayed reply is in flight, and is gone once it lands. It
+      appears in **each** of the three day sections, since one request covers them all.
+- [ ] A 500 shows the error alert and still renders the 8 rows per day.
 
 ### 4. Selection and keyboard — `e2e/selection.spec.ts`
 
-- [ ] On load, `18:00 – 21:00` is the selected row and holds the only `Note` button on the page.
-- [ ] Clicking `06:00 – 09:00` moves both the selection and the button there, and opens no dialog.
+Rows exist on all three days, so every click here names the day as well as the range —
+`day('25/08/2026').row('06:00 – 09:00')`. An unscoped `getByRole('option', { name })` is ambiguous
+and will fail with a strict-mode violation.
+
+- [ ] On load, `18:00 – 21:00` on 25/08 is the selected row and holds the only `Note` button on the
+      page — the neighbouring days hold none.
+- [ ] Clicking `06:00 – 09:00` on 25/08 moves both the selection and the button there, and opens no
+      dialog.
 - [ ] `aria-current="time"` stays on `18:00 – 21:00` after the selection moves.
+- [ ] Clicking a row on **26/08** moves the selection onto that day, and 25/08 then holds no
+      selected row — the selection is page-wide, not per day.
 - [ ] Clicking a note inside an **unselected** row opens that note without moving the selection.
 - [ ] Pressing `Note` opens the dialog without changing which row is selected.
 - [ ] Tabbing to a row and pressing `Enter` selects it. **New coverage** — `PeriodRow`'s key handler
@@ -307,16 +358,22 @@ buckets; the E2E column is what §3–§8 implement.
 - [ ] Pressing `Enter` while focus is on a button inside a row does not re-select it (the
       `event.target === event.currentTarget` guard).
 - [ ] **Midnight rollover** (`page.clock.fastForward` past 00:00, stubbed lane only, so the fixture
-      window can move with the view). An untouched view follows: the heading becomes 26/08/2026, the
-      selection lands on `00:00 – 03:00` and one further request is made. A view with a note dialog
-      open does not: the dialog stays open on its own period, the heading stays on 25/08/2026, no
-      row carries `aria-current="time"`, and a `Go to today` notice appears which then moves it.
+      window can move with the view). An untouched view follows: the three days become
+      `25`–`27/08/2026`, the selection lands on `00:00 – 03:00` on 26/08, and **one** further
+      request is made — for the single new day `[27/08, 28/08)`, since the other two are cached. A
+      view the user has committed to does not move: the days stay `24`–`26/08/2026`, the selection
+      stays where it was put, and the `role="status"` notice appears reading `It is now
+      26/08/2026.` — the `Go to today` button is in the toolbar throughout and does not appear or
+      disappear; pressing it moves the view. A note dialog open across the rollover stays open on
+      its own period. Note that the current-period marker does **not** vanish: 26/08 is one of the
+      three days on show, so `aria-current="time"` moves on to it while the selection stays behind.
       This journey cannot be written before `LiveClock.MD` and is the clearest case for a browser
       lane — jsdom and fake timers can only approximate it.
 
 ### 5. Schedule switching and the API contract — `e2e/schedule.spec.ts`, `e2e/api-contract.spec.ts`
 
-- [ ] Switching to `6h` leaves `6h` pressed, `3h` not, and 4 rows on screen; `1h` gives 24.
+- [ ] Switching to `6h` leaves `6h` pressed, `3h` not, and 4 rows **per day**; `1h` gives 24 per day
+      (12 and 72 on the page).
 - [ ] Switching schedule issues exactly one further request, for the new short name — two requests
       in total after one switch, not one per render.
 - [ ] After switching to `1h`, the selection re-anchors to `20:00 – 21:00`.
@@ -334,18 +391,29 @@ buckets; the E2E column is what §3–§8 implement.
 Replaces the scroll-growth journey `ScrollingSchedule.MD` asked for: the view is bounded now, and
 the calendar is how the user goes anywhere else (`CalendarNavigation.MD`).
 
-- [ ] Scrolling the container to either end reveals a `Calendar` button, adds no fourth day and
-      issues no request — the container's `scrollHeight` is unchanged after the scroll.
+- [ ] The navigation toolbar — `Calendar` then `Go to today` — is above the scroll container and
+      outside it, and both buttons stay visible while the days are scrolled end to end.
+- [ ] Scrolling the container to either end adds no fourth day and issues no request; the
+      container's `scrollHeight` is unchanged after the scroll.
 - [ ] `Calendar` opens a modal month grid headed `August 2026`, and it is genuinely modal.
+- [ ] The grid is Monday-first whole weeks, the days outside August are dimmed but still enabled,
+      and 25/08 carries `aria-current="date"`.
 - [ ] The grid asks `/api/schedules/s3/note-days` exactly once, for the whole grid, and not at all
       before it is opened.
 - [ ] Seeded days carry a marker; days with no notes do not.
 - [ ] `Previous month` shows `July 2026` and issues exactly one further count request; going back
       to August issues none.
 - [ ] Picking a seeded day closes the calendar, renders that day and its two neighbours with their
-      notes, and issues exactly **one** notes request — for that three-day window, with nothing
-      asked for in between.
-- [ ] The jump raises `Go to today`; pressing it returns to the current three days.
+      notes, selects that day's **first** period, and issues exactly **one** notes request, with
+      nothing asked for in between. Choose a target far enough from 25/08 that the window shares no
+      day with the one already cached, so the request really is the whole three days — the cache
+      legitimately trims a window that overlaps what it holds, which would make a "three days
+      exactly" assertion wrong rather than the app.
+- [ ] The jump raises the `It is now 25/08/2026.` notice; pressing `Go to today` in the toolbar
+      returns to the current three days and the notice goes. The button itself is present
+      throughout — assert the *notice* appearing, never the button.
+- [ ] Picking the current day from the grid is `Go to today`: the view returns to the current three
+      days and the selection lands on the current period, not on `00:00`.
 - [ ] `Escape` closes the calendar and leaves the view where it was.
 
 ### 6. The note dialog and the editor — `e2e/note-dialog.spec.ts`
@@ -370,12 +438,18 @@ the calendar is how the user goes anywhere else (`CalendarNavigation.MD`).
 
 Everything here is unreachable in jsdom; none of it is derived from a unit test.
 
-- [ ] At `1h`, all 24 rows fit inside the period list — none overflows past the day boundary.
+- [ ] At `1h`, all 24 rows of a day fit inside that day's period list — none overflows past the day
+      boundary. Measure one day section, not the scroll container, which holds three.
 - [ ] A `6h` row's height is six times a `1h` row's, within a pixel of tolerance, and the period
       list's total height is the same under both — the proportionality `App.css` is built around.
+      `--day-height` is per day, so this holds for each of the three.
 - [ ] At `1h`, the selected row is inside the viewport after load, from a viewport short enough that
-      it would otherwise be below the fold. This is the only test `ScheduleView`'s mount-time
-      `scrollIntoView` will ever have.
+      it would otherwise be below the fold. This is the only test `DaySection`'s mount-time
+      `scrollIntoView` will ever have — the mount scroll belongs to `DaySection` and the selected
+      row; `ScheduleView`'s own effect fires only when the **focus day changes**, and is covered by
+      §5b's calendar jump.
+- [ ] The navigation toolbar does not move when the days are scrolled — its `boundingBox()` is
+      unchanged before and after, which is what putting it outside the scroll container buys.
 - [ ] The selected row is distinguishable by more than colour — assert the accessible marker
       (`aria-selected`) and read the computed border to confirm the non-colour cue is present.
 
@@ -404,6 +478,12 @@ the stubbed lane (§4).
 - [ ] Today's seeded `s3` notes appear in their periods; switching to `s1` and `s6` shows theirs.
       Assert on note **content**, never on ids: the seed mints a fresh `Guid` per process.
 - [ ] Opening a seeded note shows its content in the editor.
+- [ ] Opening the calendar marks the seeded days: the real `note-days` route answers `200`, and the
+      grid carries markers on today and its neighbours (the seed spans today ± 3). Assert that
+      *some* marked day exists and that today is one, never an exact set — the seed is anchored to
+      the API process's `DateTime.Today` and the month grid's edges move with the calendar. This is
+      the only integrated assertion covering the counts route, and it exists because the offset
+      grouping is exactly the kind of thing the two projects can silently disagree about.
 - [ ] Record in the notes how long this lane takes to start, so its cost against the stubbed lane is
       on the record.
 
@@ -426,7 +506,7 @@ the stubbed lane (§4).
 
 ## Verify
 
-- [ ] `npm test` — the existing 86 Vitest tests still pass, unchanged.
+- [ ] `npm test` — the existing 221 Vitest tests still pass, unchanged.
 - [ ] `npm run build` and `npm run lint` are clean, with `e2e/` included in both.
 - [ ] `npm run test:e2e` passes from a cold start with no backend running, and again with a
       developer's own dev server already up on 5173.

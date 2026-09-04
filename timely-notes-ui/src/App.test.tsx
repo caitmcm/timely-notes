@@ -1,7 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import App from './App'
-import { intersect } from './test/intersection'
 
 /** The instant the mockup is drawn at. */
 const now = new Date(2026, 7, 25, 20, 20)
@@ -45,6 +44,23 @@ const requests = (fetchMock: ReturnType<typeof stubFetch>) =>
 const requestedShortNames = (fetchMock: ReturnType<typeof stubFetch>) =>
   requests(fetchMock).map((url) => url.pathname.split('/')[3])
 
+const section = (day: Date) =>
+  document.querySelector(`[data-day="${day.getTime()}"]`) as HTMLElement
+
+/** August 2026, the month the frozen clock sits in. */
+const august = (dayOfMonth: number) => new Date(2026, 7, dayOfMonth)
+
+/** A period row on one particular day — the same slot exists on all three rendered days. */
+const row = (dayOfMonth: number, name: string) =>
+  within(section(august(dayOfMonth))).getByRole('option', { name })
+
+const headings = () => screen.getAllByRole('listbox').map((list) => list.getAttribute('aria-label'))
+
+/** The rollover notice, which comes and goes — unlike the toolbar's Go to today, which never does. */
+const rolloverNotice = () => screen.queryByText(/^It is now /)
+
+const goToToday = () => screen.getByRole('button', { name: 'Go to today' })
+
 describe('App', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
@@ -59,15 +75,16 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: '3h', pressed: true })).toBeInTheDocument()
   })
 
-  it('asks for a three-day window: yesterday, today and tomorrow, half-open', async () => {
+  it('renders exactly three days and asks for them in one call, half-open', async () => {
     const fetchMock = stubFetch()
 
     renderApp()
 
     await waitFor(() => expect(requests(fetchMock)).toHaveLength(1))
+    expect(headings()).toEqual(['24/08/2026', '25/08/2026', '26/08/2026'])
     const { searchParams } = requests(fetchMock)[0]
-    expect(new Date(searchParams.get('searchFrom')!)).toEqual(new Date(2026, 7, 24))
-    expect(new Date(searchParams.get('searchTo')!)).toEqual(new Date(2026, 7, 27))
+    expect(new Date(searchParams.get('searchFrom')!)).toEqual(august(24))
+    expect(new Date(searchParams.get('searchTo')!)).toEqual(august(27))
   })
 
   it('fetches once per schedule change, not once per render', async () => {
@@ -84,10 +101,12 @@ describe('App', () => {
     stubFetch()
     renderApp()
 
-    const morning = await screen.findByRole('option', { name: '09:00 – 12:00' })
+    await screen.findByRole('button', { name: /Morning block/ })
 
-    // Fixture createdAt is 28/08 09:12; the row must show the 09:00 slot instead.
-    expect(morning).toContainElement(screen.getByRole('button', { name: /^09:00 Morning block/ }))
+    // Fixture createdAt is 28/08 09:12; the row must show the 09:00 slot on the 25th instead.
+    expect(row(25, '09:00 – 12:00')).toContainElement(
+      screen.getByRole('button', { name: /^09:00 Morning block/ }),
+    )
   })
 
   it('refetches with the new short name when the schedule changes', async () => {
@@ -98,7 +117,7 @@ describe('App', () => {
     await userEvent.click(screen.getByRole('button', { name: '6h' }))
 
     await waitFor(() => expect(requestedShortNames(fetchMock)).toContain('s6'))
-    expect(screen.getAllByRole('option')).toHaveLength(4)
+    expect(screen.getAllByRole('option')).toHaveLength(12)
   })
 
   it('shows an error instead of a blank page when the fetch fails', async () => {
@@ -110,7 +129,7 @@ describe('App', () => {
     renderApp()
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/could not load/i)
-    expect(screen.getAllByRole('option')).toHaveLength(8)
+    expect(screen.getAllByRole('option')).toHaveLength(24)
   })
 
   it('selects the period holding the current time on load, and puts the Note button there', async () => {
@@ -129,15 +148,12 @@ describe('App', () => {
     renderApp()
     await screen.findByRole('option', { selected: true })
 
-    await userEvent.click(screen.getByRole('option', { name: '06:00 – 09:00' }))
+    await userEvent.click(row(25, '06:00 – 09:00'))
 
     const selected = screen.getByRole('option', { selected: true })
     expect(selected).toHaveAccessibleName('06:00 – 09:00')
     expect(selected).toContainElement(screen.getByRole('button', { name: 'Note' }))
-    expect(screen.getByRole('option', { name: '18:00 – 21:00' })).toHaveAttribute(
-      'aria-current',
-      'time',
-    )
+    expect(row(25, '18:00 – 21:00')).toHaveAttribute('aria-current', 'time')
   })
 
   it('does not open the editor when a row is merely selected', async () => {
@@ -145,7 +161,7 @@ describe('App', () => {
     renderApp()
     await screen.findByRole('option', { selected: true })
 
-    await userEvent.click(screen.getByRole('option', { name: '06:00 – 09:00' }))
+    await userEvent.click(row(25, '06:00 – 09:00'))
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
@@ -166,10 +182,12 @@ describe('App', () => {
     stubFetch()
     renderApp()
 
-    const morning = await screen.findByRole('option', { name: '09:00 – 12:00' })
+    await screen.findByRole('button', { name: /Morning block/ })
 
-    expect(morning).toContainElement(screen.getByRole('button', { name: /Morning block/ }))
-    expect(screen.getByRole('option', { name: '15:00 – 18:00' })).toContainElement(
+    expect(row(25, '09:00 – 12:00')).toContainElement(
+      screen.getByRole('button', { name: /Morning block/ }),
+    )
+    expect(row(25, '15:00 – 18:00')).toContainElement(
       screen.getByRole('button', { name: /Afternoon block/ }),
     )
   })
@@ -310,15 +328,15 @@ describe('App — live clock', () => {
     Reflect.deleteProperty(Element.prototype, 'scrollIntoView')
   })
 
-  // The window used to be refetched whole; days already held are now kept, so a rollover asks
-  // only for the one day it has never seen — see `ScrollingSchedule.MD`.
-  it('follows the clock over midnight: new heading, one more fetch, one new day', async () => {
+  // The window moves one day on, and days already held are kept, so a rollover asks only for the
+  // one day it has never seen.
+  it('follows the clock over midnight: the window moves on, one more fetch, one new day', async () => {
     const fetchMock = await mountAt(dayBefore(23, 59))
-    expect(screen.getByRole('heading', { name: '25/08/2026' })).toBeInTheDocument()
+    expect(headings()).toEqual(['24/08/2026', '25/08/2026', '26/08/2026'])
 
     await advance(2 * 60_000)
 
-    expect(screen.getByRole('heading', { name: '26/08/2026' })).toBeInTheDocument()
+    expect(headings()).toEqual(['25/08/2026', '26/08/2026', '27/08/2026'])
     expect(selectedName()).toBe('00:00 – 03:00')
     expect(requests(fetchMock)).toHaveLength(2)
     const { searchParams } = requests(fetchMock)[1]
@@ -328,13 +346,18 @@ describe('App — live clock', () => {
 
   it('stays put over midnight once the user has selected a row', async () => {
     const fetchMock = await mountAt(dayBefore(23, 59))
-    await click(screen.getByRole('option', { name: '06:00 – 09:00' }))
+    await click(row(25, '06:00 – 09:00'))
 
     await advance(2 * 60_000)
 
-    expect(screen.getByRole('heading', { name: '25/08/2026' })).toBeInTheDocument()
+    expect(headings()).toEqual(['24/08/2026', '25/08/2026', '26/08/2026'])
     expect(selectedName()).toBe('06:00 – 09:00')
-    expect(currentName()).toBeUndefined()
+    expect(section(august(25))).toContainElement(screen.getByRole('option', { selected: true }))
+    // The new day is one of the three on show, so the marker moves on to it while the view stays.
+    expect(currentName()).toBe('00:00 – 03:00')
+    expect(section(august(26))).toContainElement(
+      screen.getAllByRole('option').find((option) => option.getAttribute('aria-current') === 'time')!,
+    )
     expect(requests(fetchMock)).toHaveLength(1)
   })
 
@@ -347,18 +370,19 @@ describe('App — live clock', () => {
 
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '21:00 – 00:00' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: '25/08/2026' })).toBeInTheDocument()
+    expect(headings()).toEqual(['24/08/2026', '25/08/2026', '26/08/2026'])
   })
 
-  it('offers Go to today only after the day has rolled under a committed view', async () => {
+  // The control itself is always there; only the notice explaining it comes and goes.
+  it('notices the rollover only under a committed view', async () => {
     await mountAt(dayBefore(23, 59))
-    expect(screen.queryByRole('button', { name: 'Go to today' })).not.toBeInTheDocument()
+    expect(rolloverNotice()).not.toBeInTheDocument()
 
-    await click(screen.getByRole('option', { name: '06:00 – 09:00' }))
+    await click(row(25, '06:00 – 09:00'))
     await advance(2 * 60_000)
 
-    expect(screen.getByRole('button', { name: 'Go to today' })).toBeInTheDocument()
-    expect(screen.getByRole('status')).toHaveTextContent('26/08/2026')
+    expect(rolloverNotice()).toHaveTextContent('26/08/2026')
+    expect(goToToday()).toBeInTheDocument()
   })
 
   it('shows no notice when the view followed the clock by itself', async () => {
@@ -366,21 +390,32 @@ describe('App — live clock', () => {
 
     await advance(2 * 60_000)
 
-    expect(screen.queryByRole('button', { name: 'Go to today' })).not.toBeInTheDocument()
+    expect(rolloverNotice()).not.toBeInTheDocument()
   })
 
   it('moves the view to the current day when Go to today is pressed', async () => {
     const fetchMock = await mountAt(dayBefore(23, 59))
-    await click(screen.getByRole('option', { name: '06:00 – 09:00' }))
+    await click(row(25, '06:00 – 09:00'))
     await advance(2 * 60_000)
 
-    await click(screen.getByRole('button', { name: 'Go to today' }))
+    await click(goToToday())
     await act(async () => {})
 
-    expect(screen.getByRole('heading', { name: '26/08/2026' })).toBeInTheDocument()
+    expect(headings()).toEqual(['25/08/2026', '26/08/2026', '27/08/2026'])
     expect(selectedName()).toBe('00:00 – 03:00')
-    expect(screen.queryByRole('button', { name: 'Go to today' })).not.toBeInTheDocument()
+    expect(rolloverNotice()).not.toBeInTheDocument()
     expect(requests(fetchMock)).toHaveLength(2)
+  })
+
+  it('leaves the view alone when Go to today is pressed on the current day', async () => {
+    const fetchMock = await mountAt(dayBefore(20, 20))
+
+    await click(goToToday())
+    await act(async () => {})
+
+    expect(headings()).toEqual(['24/08/2026', '25/08/2026', '26/08/2026'])
+    expect(selectedName()).toBe('18:00 – 21:00')
+    expect(requests(fetchMock)).toHaveLength(1)
   })
 
   it('stamps a new note with the instant the dialog opened, on the day that is current then', async () => {
@@ -399,7 +434,7 @@ describe('App — live clock', () => {
   it('stamps a note taken in a slot that is not the live one with that slot start', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {})
     await mountAt(dayBefore(20, 20))
-    await click(screen.getByRole('option', { name: '06:00 – 09:00' }))
+    await click(row(25, '06:00 – 09:00'))
 
     await click(screen.getByRole('button', { name: 'Note' }))
     await click(screen.getByRole('button', { name: 'Save' }))
@@ -410,111 +445,246 @@ describe('App — live clock', () => {
 })
 
 /**
- * The continuous view. Growth is driven through the stubbed IntersectionObserver — jsdom has no
- * layout, so a real scroll cannot be simulated and is covered in the browser instead.
+ * The bounded view and the calendar that navigates it. `ScrollingSchedule.MD`'s growth and anchor
+ * tests are gone with the machinery they covered: there is no observer, no sentinel and no range.
  */
-describe('App — scrolling', () => {
-  const day = (dayOfMonth: number) => new Date(2026, 7, dayOfMonth)
-
-  /** Answers like the API, honouring the half-open window, so notes land on their own day. */
-  function stubWindowedFetch(notes: ReturnType<typeof wireNote>[] = s3Notes) {
+describe('App — calendar navigation', () => {
+  /** Answers both routes like the API: the notes route honours the window, note-days counts them. */
+  function stubApi(notes: ReturnType<typeof wireNote>[] = s3Notes) {
     const fetchMock = vi.fn(async (url: string) => {
-      const { searchParams } = new URL(url, 'http://localhost')
-      const from = new Date(searchParams.get('searchFrom')!).getTime()
-      const to = new Date(searchParams.get('searchTo')!).getTime()
+      const parsed = new URL(url, 'http://localhost')
+      const from = new Date(parsed.searchParams.get('searchFrom')!).getTime()
+      const to = new Date(parsed.searchParams.get('searchTo')!).getTime()
+      const inWindow = notes.filter((note) => {
+        const at = new Date(note.occursAt).getTime()
 
-      return {
-        ok: true,
-        status: 200,
-        json: async () =>
-          notes.filter((note) => {
-            const at = new Date(note.occursAt).getTime()
+        return at >= from && at < to
+      })
 
-            return at >= from && at < to
-          }),
-      } as Response
+      if (parsed.pathname.endsWith('/note-days')) {
+        const counts = new Map<number, number>()
+
+        for (const note of inWindow) {
+          const at = new Date(note.occursAt)
+          const day = new Date(at.getFullYear(), at.getMonth(), at.getDate()).getTime()
+          counts.set(day, (counts.get(day) ?? 0) + 1)
+        }
+
+        return {
+          ok: true,
+          status: 200,
+          json: async () =>
+            [...counts].map(([day, count]) => ({ day: new Date(day).toISOString(), count })),
+        } as Response
+      }
+
+      return { ok: true, status: 200, json: async () => inWindow } as Response
     })
     vi.stubGlobal('fetch', fetchMock)
 
     return fetchMock
   }
 
-  const sentinels = () => [...document.querySelectorAll('.schedule-view__sentinel')]
-  const reachEnd = () => act(() => intersect(sentinels()[1], true))
-  const reachStart = () => act(() => intersect(sentinels()[0], true))
-  const section = (dayOfMonth: number) =>
-    document.querySelector(`[data-day="${day(dayOfMonth).getTime()}"]`) as HTMLElement
+  const noteRequests = (fetchMock: ReturnType<typeof stubApi>) =>
+    requests(fetchMock).filter((url) => url.pathname.endsWith('/notes'))
 
-  const headings = () =>
-    screen.getAllByRole('listbox').map((list) => list.getAttribute('aria-label'))
+  const countRequests = (fetchMock: ReturnType<typeof stubApi>) =>
+    requests(fetchMock).filter((url) => url.pathname.endsWith('/note-days'))
 
   const windowOf = (url: URL) => [
     new Date(url.searchParams.get('searchFrom')!),
     new Date(url.searchParams.get('searchTo')!),
   ]
 
+  const openCalendar = async () =>
+    userEvent.click(screen.getByRole('button', { name: 'Calendar' }))
+
   afterEach(() => {
     vi.unstubAllGlobals()
   })
 
-  it('renders the focus day alone until the user reaches an edge', async () => {
-    stubWindowedFetch()
-
+  it('renders the focus day and its two neighbours, and nothing more', async () => {
+    stubApi()
     renderApp()
 
     await screen.findByRole('option', { selected: true })
-    expect(headings()).toEqual(['25/08/2026'])
-  })
-
-  it('appends the next day when the bottom is reached, and prefetches two days past it', async () => {
-    const fetchMock = stubWindowedFetch()
-    renderApp()
-    await screen.findByRole('option', { selected: true })
-
-    reachEnd()
-
-    expect(headings()).toEqual(['25/08/2026', '26/08/2026'])
-    await waitFor(() => expect(requests(fetchMock)).toHaveLength(2))
-    expect(windowOf(requests(fetchMock)[1])).toEqual([day(27), day(29)])
-  })
-
-  it('prepends the day before when the top is reached, and prefetches two days back', async () => {
-    const fetchMock = stubWindowedFetch()
-    renderApp()
-    await screen.findByRole('option', { selected: true })
-
-    reachStart()
-
-    expect(headings()).toEqual(['24/08/2026', '25/08/2026'])
-    await waitFor(() => expect(requests(fetchMock)).toHaveLength(2))
-    expect(windowOf(requests(fetchMock)[1])).toEqual([day(22), day(24)])
-  })
-
-  it('keeps growing a day at a time in the direction of travel', async () => {
-    stubWindowedFetch()
-    renderApp()
-    await screen.findByRole('option', { selected: true })
-
-    reachEnd()
-    reachEnd()
-    reachEnd()
-
-    expect(headings()).toEqual(['25/08/2026', '26/08/2026', '27/08/2026', '28/08/2026'])
-  })
-
-  it('renders days already loaded without asking for them again', async () => {
-    const fetchMock = stubWindowedFetch()
-    renderApp()
-    await screen.findByRole('option', { selected: true })
-    reachEnd()
-    await waitFor(() => expect(requests(fetchMock)).toHaveLength(2))
-
-    reachStart()
 
     expect(headings()).toEqual(['24/08/2026', '25/08/2026', '26/08/2026'])
-    // Only the two days past the new edge: 24, 25 and 26 are all held already.
-    await waitFor(() => expect(requests(fetchMock)).toHaveLength(3))
-    expect(windowOf(requests(fetchMock)[2])).toEqual([day(22), day(24)])
+  })
+
+  it('requests no counts until the calendar is opened', async () => {
+    const fetchMock = stubApi()
+    renderApp()
+    await screen.findByRole('option', { selected: true })
+
+    expect(countRequests(fetchMock)).toHaveLength(0)
+
+    await openCalendar()
+
+    await waitFor(() => expect(countRequests(fetchMock)).toHaveLength(1))
+  })
+
+  it('opens on the month holding the focus day, marked where notes are', async () => {
+    stubApi()
+    renderApp()
+    await screen.findByRole('option', { selected: true })
+
+    await openCalendar()
+
+    expect(screen.getByText('August 2026')).toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '25, 2 notes' })).toBeInTheDocument(),
+    )
+  })
+
+  it('re-points the view at a day picked in another month, in one request', async () => {
+    const fetchMock = stubApi()
+    renderApp()
+    await screen.findByRole('option', { selected: true })
+    await openCalendar()
+    const before = noteRequests(fetchMock).length
+
+    await userEvent.click(screen.getByRole('button', { name: 'Previous month' }))
+    await userEvent.click(screen.getByRole('button', { name: '15' }))
+
+    expect(headings()).toEqual(['14/07/2026', '15/07/2026', '16/07/2026'])
+    await waitFor(() => expect(noteRequests(fetchMock)).toHaveLength(before + 1))
+    expect(windowOf(noteRequests(fetchMock)[before])).toEqual([
+      new Date(2026, 6, 14),
+      new Date(2026, 6, 17),
+    ])
+  })
+
+  it('selects the first period of a day picked in the past', async () => {
+    stubApi()
+    renderApp()
+    await screen.findByRole('option', { selected: true })
+    await openCalendar()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Previous month' }))
+    await userEvent.click(screen.getByRole('button', { name: '15' }))
+
+    const selected = screen.getByRole('option', { selected: true })
+    expect(selected).toHaveAccessibleName('00:00 – 03:00')
+    expect(section(new Date(2026, 6, 15))).toContainElement(selected)
+  })
+
+  it('notices a calendar jump, and closes the calendar', async () => {
+    stubApi()
+    renderApp()
+    await screen.findByRole('option', { selected: true })
+    expect(rolloverNotice()).not.toBeInTheDocument()
+
+    await openCalendar()
+    await userEvent.click(screen.getByRole('button', { name: 'Previous month' }))
+    await userEvent.click(screen.getByRole('button', { name: '15' }))
+
+    expect(rolloverNotice()).toHaveTextContent('25/08/2026')
+    expect(screen.queryByText('July 2026')).not.toBeInTheDocument()
+  })
+
+  it('offers Go to today in the toolbar wherever the view is', async () => {
+    stubApi()
+    renderApp()
+    await screen.findByRole('option', { selected: true })
+    expect(goToToday()).toBeInTheDocument()
+
+    await openCalendar()
+    await userEvent.click(screen.getByRole('button', { name: 'Previous month' }))
+    await userEvent.click(screen.getByRole('button', { name: '15' }))
+
+    expect(goToToday()).toBeInTheDocument()
+  })
+
+  it('picking the current day is Go to today', async () => {
+    stubApi()
+    renderApp()
+    await screen.findByRole('option', { selected: true })
+    await openCalendar()
+    await userEvent.click(screen.getByRole('button', { name: 'Previous month' }))
+    await userEvent.click(screen.getByRole('button', { name: '15' }))
+
+    // Reopened on the month it was sent to, so today is one month on from there.
+    await openCalendar()
+    await userEvent.click(screen.getByRole('button', { name: 'Next month' }))
+    await userEvent.click(screen.getByRole('button', { name: /^25(,|$)/ }))
+
+    expect(headings()).toEqual(['24/08/2026', '25/08/2026', '26/08/2026'])
+    expect(screen.getByRole('option', { selected: true })).toHaveAccessibleName('18:00 – 21:00')
+    expect(rolloverNotice()).not.toBeInTheDocument()
+  })
+
+  it('goes back to the current three days from a jump', async () => {
+    stubApi()
+    renderApp()
+    await screen.findByRole('option', { selected: true })
+    await openCalendar()
+    await userEvent.click(screen.getByRole('button', { name: 'Previous month' }))
+    await userEvent.click(screen.getByRole('button', { name: '15' }))
+
+    await userEvent.click(goToToday())
+
+    expect(headings()).toEqual(['24/08/2026', '25/08/2026', '26/08/2026'])
+  })
+
+  it('asks for nothing between here and a day jumped to', async () => {
+    const fetchMock = stubApi()
+    renderApp()
+    await screen.findByRole('option', { selected: true })
+    await openCalendar()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Previous month' }))
+    await userEvent.click(screen.getByRole('button', { name: '15' }))
+
+    await waitFor(() => expect(noteRequests(fetchMock)).toHaveLength(2))
+    expect(noteRequests(fetchMock).map(windowOf)).toEqual([
+      [august(24), august(27)],
+      [new Date(2026, 6, 14), new Date(2026, 6, 17)],
+    ])
+  })
+
+  it('keeps the calendar open across a schedule change and re-asks for the counts', async () => {
+    const fetchMock = stubApi()
+    renderApp()
+    await screen.findByRole('option', { selected: true })
+    await openCalendar()
+    await waitFor(() => expect(countRequests(fetchMock)).toHaveLength(1))
+
+    await userEvent.click(screen.getByRole('button', { name: '6h' }))
+
+    expect(screen.getByText('August 2026')).toBeInTheDocument()
+    await waitFor(() =>
+      expect(countRequests(fetchMock).map((url) => url.pathname.split('/')[3])).toEqual([
+        's3',
+        's6',
+      ]),
+    )
+  })
+
+  it('asks for a month grid once, however often it is paged back to', async () => {
+    const fetchMock = stubApi()
+    renderApp()
+    await screen.findByRole('option', { selected: true })
+    await openCalendar()
+    await waitFor(() => expect(countRequests(fetchMock)).toHaveLength(1))
+
+    await userEvent.click(screen.getByRole('button', { name: 'Previous month' }))
+    await waitFor(() => expect(countRequests(fetchMock)).toHaveLength(2))
+    await userEvent.click(screen.getByRole('button', { name: 'Next month' }))
+
+    expect(countRequests(fetchMock)).toHaveLength(2)
+  })
+
+  it('closes on Escape and leaves the view where it was', async () => {
+    stubApi()
+    renderApp()
+    await screen.findByRole('option', { selected: true })
+    await openCalendar()
+
+    fireEvent(document.querySelector('dialog')!, new Event('cancel'))
+
+    expect(screen.queryByText('August 2026')).not.toBeInTheDocument()
+    expect(headings()).toEqual(['24/08/2026', '25/08/2026', '26/08/2026'])
   })
 
   it('puts a note on the day it occurs on, not on the day in view', async () => {
@@ -522,81 +692,33 @@ describe('App — scrolling', () => {
       ...wireNote('s3-tomorrow', 9, 'Tomorrow: the create endpoint.'),
       occursAt: new Date(2026, 7, 26, 9).toISOString(),
     }
-    stubWindowedFetch([...s3Notes, tomorrowsNote])
+    stubApi([...s3Notes, tomorrowsNote])
     renderApp()
-    await screen.findByRole('option', { selected: true })
-
-    reachEnd()
 
     const tomorrow = await screen.findByRole('button', { name: /Tomorrow: the create endpoint/ })
-    expect(section(26)).toContainElement(tomorrow)
-    expect(section(25)).not.toContainElement(tomorrow)
+
+    expect(section(august(26))).toContainElement(tomorrow)
+    expect(section(august(25))).not.toContainElement(tomorrow)
   })
 
   it('says a day is loading until its notes land, without hiding its rows', async () => {
-    stubWindowedFetch()
-    renderApp()
-    await screen.findByRole('option', { selected: true })
     vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})))
 
-    reachEnd()
-    reachEnd()
-
-    expect(within(section(27)).getByRole('status')).toHaveTextContent(/loading notes/i)
-    expect(within(section(27)).getAllByRole('option')).toHaveLength(8)
-  })
-
-  it('offers Go to today once the day being read is not the current one', async () => {
-    stubWindowedFetch()
     renderApp()
-    await screen.findByRole('option', { selected: true })
-    expect(screen.queryByRole('button', { name: 'Go to today' })).not.toBeInTheDocument()
 
-    reachStart()
-    act(() => intersect(section(24), true))
-
-    expect(screen.getByRole('button', { name: 'Go to today' })).toBeInTheDocument()
-  })
-
-  it('returns to today without fetching anything on the way', async () => {
-    const fetchMock = stubWindowedFetch()
-    renderApp()
-    await screen.findByRole('option', { selected: true })
-    reachStart()
-    act(() => intersect(section(24), true))
-    await waitFor(() => expect(requests(fetchMock)).toHaveLength(2))
-
-    await userEvent.click(screen.getByRole('button', { name: 'Go to today' }))
-
-    expect(headings()).toEqual(['25/08/2026'])
-    expect(screen.getByRole('option', { selected: true })).toHaveAccessibleName('18:00 – 21:00')
-    expect(screen.queryByRole('button', { name: 'Go to today' })).not.toBeInTheDocument()
-    expect(requests(fetchMock)).toHaveLength(2)
-  })
-
-  it('keeps the selection where it is while the view scrolls', async () => {
-    stubWindowedFetch()
-    renderApp()
-    await screen.findByRole('option', { selected: true })
-
-    reachEnd()
-    act(() => intersect(section(26), true))
-
-    const selected = screen.getAllByRole('option', { selected: true })
-    expect(selected).toHaveLength(1)
-    expect(section(25)).toContainElement(selected[0])
+    expect(within(section(august(26))).getByRole('status')).toHaveTextContent(/loading notes/i)
+    expect(within(section(august(26))).getAllByRole('option')).toHaveLength(8)
   })
 
   it('moves the selection onto another day when a row there is chosen', async () => {
-    stubWindowedFetch()
+    stubApi()
     renderApp()
     await screen.findByRole('option', { selected: true })
-    reachEnd()
 
-    await userEvent.click(within(section(26)).getByRole('option', { name: '06:00 – 09:00' }))
+    await userEvent.click(row(26, '06:00 – 09:00'))
 
     const selected = screen.getAllByRole('option', { selected: true })
     expect(selected).toHaveLength(1)
-    expect(section(26)).toContainElement(selected[0])
+    expect(section(august(26))).toContainElement(selected[0])
   })
 })

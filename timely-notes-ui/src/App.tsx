@@ -1,12 +1,15 @@
 import { useMemo, useState } from 'react'
 import { occursAtFor } from './domain/notes'
 import { addDays, dayStartOf, eachDay } from './domain/days'
+import { monthGrid, monthStartOf } from './domain/months'
 import { assignNotes, buildPeriods, findCurrentPeriod, formatDayHeading } from './domain/periods'
 import { DEFAULT_SCHEDULE, SCHEDULES } from './domain/schedules'
 import { useNow } from './hooks/useNow'
+import { useNoteDays } from './hooks/useNoteDays'
 import { useScheduleNotes } from './hooks/useScheduleNotes'
 import SchedulePicker from './components/SchedulePicker'
 import ScheduleView from './components/ScheduleView'
+import CalendarDialog from './components/CalendarDialog'
 import NoteDialog from './components/NoteDialog'
 import type { Note, Period, Schedule, ScheduleShortName } from './types'
 import './App.css'
@@ -26,20 +29,7 @@ interface Pinned {
   selectedStart: number
 }
 
-/** Rendered days, inclusive both ends. Grown a day at a time as the user reaches an edge. */
-interface DayRange {
-  first: number
-  last: number
-}
-
-/** Where the user has scrolled to, remembered against the focus day it was observed under. */
-interface Anchor {
-  forFocus: number
-  dayStart: number
-}
-
-/** Days loaded past the rendered edge: two in the direction of travel, one behind. */
-const PREFETCH_DAYS = 2
+/** Days either side of the focus day. The window is always these three; it never grows. */
 const NEIGHBOUR_DAYS = 1
 
 function currentStart(day: Date, schedule: Schedule, now: Date): number {
@@ -53,8 +43,6 @@ function App({ now: nowProp }: AppProps) {
 
   const [schedule, setSchedule] = useState<Schedule>(DEFAULT_SCHEDULE)
   const [pinned, setPinned] = useState<Pinned | null>(null)
-  const [anchor, setAnchor] = useState<Anchor | null>(null)
-  const [direction, setDirection] = useState(0)
 
   // Everything derived keys off the day as a number, never off `now`: `now` is a fresh Date every
   // minute, so memoising on it would rebuild the window and refire the fetch on every tick.
@@ -65,22 +53,10 @@ function App({ now: nowProp }: AppProps) {
   const focusDayStart = pinned?.dayStart ?? currentDayStart
   const focusDay = useMemo(() => new Date(focusDayStart), [focusDayStart])
 
-  const [range, setRange] = useState<DayRange>(() => ({
-    first: focusDayStart,
-    last: focusDayStart,
-  }))
+  const first = addDays(focusDayStart, -NEIGHBOUR_DAYS)
+  const last = addDays(focusDayStart, NEIGHBOUR_DAYS)
 
-  // A focus day outside the rendered days means the view was moved rather than scrolled — a
-  // rollover, or Go to today from a week back — so it starts again there instead of spanning the gap.
-  const rendered: DayRange =
-    focusDayStart >= range.first && focusDayStart <= range.last
-      ? range
-      : { first: focusDayStart, last: focusDayStart }
-
-  const wantFrom = addDays(rendered.first, -(direction < 0 ? PREFETCH_DAYS : NEIGHBOUR_DAYS))
-  const wantTo = addDays(rendered.last, direction > 0 ? PREFETCH_DAYS : NEIGHBOUR_DAYS)
-
-  const { notesFor, isLoaded, error } = useScheduleNotes(schedule, wantFrom, wantTo)
+  const { notesFor, isLoaded, error } = useScheduleNotes(schedule, first, last)
 
   const selectedStart = pinned?.selectedStart ?? currentStart(focusDay, schedule, now)
 
@@ -88,10 +64,20 @@ function App({ now: nowProp }: AppProps) {
   const [dialogNote, setDialogNote] = useState<Note | null>(null)
   const [dialogOccursAt, setDialogOccursAt] = useState<Date | null>(null)
 
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false)
+  const [calendarMonth, setCalendarMonth] = useState(() => monthStartOf(focusDayStart))
+  const weeks = useMemo(() => monthGrid(calendarMonth), [calendarMonth])
+
+  const {
+    countFor,
+    isLoading: isCalendarLoading,
+    error: calendarError,
+  } = useNoteDays(schedule, weeks[0][0], weeks.at(-1)!.at(-1)!, isCalendarOpen)
+
   // App owns the domain calls, so everything below it is handed finished periods.
   const days = useMemo(
     () =>
-      eachDay(rendered.first, rendered.last).map((dayStart) => ({
+      eachDay(first, last).map((dayStart) => ({
         dayStart,
         periods: assignNotes(
           buildPeriods(new Date(dayStart), schedule.spanHours),
@@ -99,17 +85,14 @@ function App({ now: nowProp }: AppProps) {
         ),
         isLoading: !isLoaded(dayStart),
       })),
-    [rendered.first, rendered.last, schedule, notesFor, isLoaded],
+    [first, last, schedule, notesFor, isLoaded],
   )
 
   const selectedPeriod = days
     .flatMap((day) => day.periods)
     .find((period) => period.start.getTime() === selectedStart)
 
-  // The anchor is discarded the moment the focus day moves, so a rollover, a selection on another
-  // day and Go to today each correct it in the same render.
-  const anchorDayStart = anchor?.forFocus === focusDayStart ? anchor.dayStart : focusDayStart
-  const awayFromToday = anchorDayStart !== currentDayStart
+  const awayFromToday = focusDayStart !== currentDayStart
 
   const closeDialog = () => {
     setDialogPeriod(null)
@@ -154,23 +137,25 @@ function App({ now: nowProp }: AppProps) {
 
   const handleSelect = (period: Period) => pinTo(period, period.start.getTime())
 
-  const handleReachStart = () => {
-    setRange({ first: addDays(rendered.first, -1), last: rendered.last })
-    setDirection(-1)
+  const goToToday = () => setPinned(null)
+
+  const openCalendar = () => {
+    setCalendarMonth(monthStartOf(focusDayStart))
+    setIsCalendarOpen(true)
   }
 
-  const handleReachEnd = () => {
-    setRange({ first: rendered.first, last: addDays(rendered.last, 1) })
-    setDirection(1)
-  }
+  /** Choosing from the calendar is a commitment, exactly as selecting a row is. */
+  const handlePickDay = (dayStart: number) => {
+    setIsCalendarOpen(false)
 
-  const handleAnchorDay = (dayStart: number) =>
-    setAnchor({ forFocus: focusDayStart, dayStart })
+    if (dayStart === currentDayStart) {
+      goToToday()
 
-  const goToToday = () => {
-    setPinned(null)
-    setRange({ first: currentDayStart, last: currentDayStart })
-    setAnchor(null)
+      return
+    }
+
+    const periods = buildPeriods(new Date(dayStart), schedule.spanHours)
+    setPinned({ dayStart, selectedStart: periods[0].start.getTime() })
   }
 
   // Placeholder until a create/update endpoint exists.
@@ -192,12 +177,10 @@ function App({ now: nowProp }: AppProps) {
         </p>
       )}
 
+      {/* Go to today lives in the toolbar, always; this only says why it is worth pressing. */}
       {awayFromToday && (
         <p className="app__status" role="status">
-          It is now {formatDayHeading(new Date(currentDayStart))}.{' '}
-          <button type="button" className="app__rollover-action" onClick={goToToday}>
-            Go to today
-          </button>
+          It is now {formatDayHeading(new Date(currentDayStart))}.
         </p>
       )}
 
@@ -209,9 +192,22 @@ function App({ now: nowProp }: AppProps) {
         onSelect={handleSelect}
         onTakeNote={handleTakeNote}
         onOpenNote={handleOpenNote}
-        onReachStart={handleReachStart}
-        onReachEnd={handleReachEnd}
-        onAnchorDay={handleAnchorDay}
+        onOpenCalendar={openCalendar}
+        onGoToToday={goToToday}
+      />
+
+      <CalendarDialog
+        isOpen={isCalendarOpen}
+        monthStart={calendarMonth}
+        weeks={weeks}
+        currentDayStart={currentDayStart}
+        focusDayStart={focusDayStart}
+        countFor={countFor}
+        isLoading={isCalendarLoading}
+        error={calendarError}
+        onChangeMonth={setCalendarMonth}
+        onPickDay={handlePickDay}
+        onClose={() => setIsCalendarOpen(false)}
       />
 
       <NoteDialog

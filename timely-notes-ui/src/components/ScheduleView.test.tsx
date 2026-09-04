@@ -1,6 +1,6 @@
-import { act, render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { buildPeriods } from '../domain/periods'
-import { intersect, isObserved, observerOf } from '../test/intersection'
 import ScheduleView, { type DayView } from './ScheduleView'
 
 const day = (dayOfMonth: number) => new Date(2026, 7, dayOfMonth).getTime()
@@ -12,20 +12,20 @@ const dayView = (dayOfMonth: number, isLoading = false): DayView => ({
   isLoading,
 })
 
-const sentinels = () => [...document.querySelectorAll('.schedule-view__sentinel')]
+/** The three days App always renders: the focus day and its neighbours. */
+const threeDays = [dayView(24), dayView(25), dayView(26)]
 
 function renderView(overrides: Partial<React.ComponentProps<typeof ScheduleView>> = {}) {
   const props = {
-    days: [dayView(25)],
+    days: threeDays,
     now,
     focusDayStart: day(25),
     selectedPeriod: undefined,
     onSelect: vi.fn(),
     onTakeNote: vi.fn(),
     onOpenNote: vi.fn(),
-    onReachStart: vi.fn(),
-    onReachEnd: vi.fn(),
-    onAnchorDay: vi.fn(),
+    onOpenCalendar: vi.fn(),
+    onGoToToday: vi.fn(),
     ...overrides,
   }
 
@@ -38,107 +38,43 @@ const section = (dayOfMonth: number) =>
   document.querySelector(`[data-day="${day(dayOfMonth)}"]`) as HTMLElement
 
 describe('ScheduleView', () => {
-  it('renders one day section per day, in order', () => {
-    renderView({ days: [dayView(24), dayView(25), dayView(26)] })
+  it('renders one day section per day, in order, in the one scroll container', () => {
+    renderView()
 
     expect(screen.getAllByRole('listbox').map((list) => list.getAttribute('aria-label'))).toEqual([
       '24/08/2026',
       '25/08/2026',
       '26/08/2026',
     ])
+    expect(screen.getByTestId('schedule-scroll')).toContainElement(section(24))
   })
 
-  it('observes its sentinels and its days against the scroll container', () => {
-    renderView()
+  it('renders one navigation toolbar, above the scroll and outside it', () => {
+    const toolbar = within(renderView().container).getByRole('toolbar', { name: 'Navigate' })
 
-    expect(observerOf(sentinels()[0])?.root).toBe(screen.getByTestId('schedule-scroll'))
-    expect(isObserved(section(25))).toBe(true)
+    expect(
+      within(toolbar)
+        .getAllByRole('button')
+        .map((button) => button.textContent),
+    ).toEqual(['Calendar', 'Go to today'])
+    expect(screen.getByTestId('schedule-scroll')).not.toContainElement(toolbar)
   })
 
-  it('asks for an earlier day when the top sentinel comes into view', () => {
+  it('opens the calendar from the toolbar', async () => {
     const { props } = renderView()
 
-    act(() => intersect(sentinels()[0], true))
+    await userEvent.click(screen.getByRole('button', { name: 'Calendar' }))
 
-    expect(props.onReachStart).toHaveBeenCalledTimes(1)
-    expect(props.onReachEnd).not.toHaveBeenCalled()
+    expect(props.onOpenCalendar).toHaveBeenCalledTimes(1)
   })
 
-  it('asks for a later day when the bottom sentinel comes into view', () => {
-    const { props } = renderView()
+  // Always offered, whichever day is in view: navigation that appears and disappears is a surprise.
+  it('goes to today from the toolbar, on any day', async () => {
+    const { props } = renderView({ focusDayStart: day(24) })
 
-    act(() => intersect(sentinels()[1], true))
+    await userEvent.click(screen.getByRole('button', { name: 'Go to today' }))
 
-    expect(props.onReachEnd).toHaveBeenCalledTimes(1)
-  })
-
-  it('asks for nothing when a sentinel leaves the viewport', () => {
-    const { props } = renderView()
-
-    act(() => intersect(sentinels()[1], false))
-
-    expect(props.onReachEnd).not.toHaveBeenCalled()
-  })
-
-  it('reports the earliest day in the viewport, and only when it changes', () => {
-    const onAnchorDay = vi.fn()
-    renderView({ days: [dayView(24), dayView(25), dayView(26)], onAnchorDay })
-
-    act(() => intersect(section(25), true))
-    act(() => intersect(section(26), true))
-
-    expect(onAnchorDay.mock.calls).toEqual([[day(25)]])
-
-    act(() => intersect(section(24), true))
-
-    expect(onAnchorDay.mock.calls).toEqual([[day(25)], [day(24)]])
-  })
-
-  it('moves the anchor on as days scroll out of the viewport', () => {
-    const { props } = renderView({ days: [dayView(24), dayView(25)] })
-    act(() => intersect(section(24), true))
-    act(() => intersect(section(25), true))
-
-    act(() => intersect(section(24), false))
-
-    expect(props.onAnchorDay).toHaveBeenLastCalledWith(day(25))
-  })
-
-  it('disconnects its observer on unmount', () => {
-    const { unmount } = renderView()
-    const sentinel = sentinels()[0]
-
-    unmount()
-
-    expect(isObserved(sentinel)).toBe(false)
-  })
-
-  it('holds the reading position when a day is prepended above it', () => {
-    const { rerender, props } = renderView({ days: [dayView(25)] })
-    const container = screen.getByTestId('schedule-scroll')
-    // jsdom lays nothing out, so the growth a prepended section causes has to be stated.
-    let scrollHeight = 600
-    Object.defineProperty(container, 'scrollHeight', { get: () => scrollHeight })
-    container.scrollTop = 0
-    rerender(<ScheduleView {...props} days={[dayView(25)]} />)
-
-    scrollHeight = 1200
-    rerender(<ScheduleView {...props} days={[dayView(24), dayView(25)]} />)
-
-    expect(container.scrollTop).toBe(600)
-  })
-
-  it('leaves the scroll position alone when a day is appended below', () => {
-    const { rerender, props } = renderView({ days: [dayView(25)] })
-    const container = screen.getByTestId('schedule-scroll')
-    let scrollHeight = 600
-    Object.defineProperty(container, 'scrollHeight', { get: () => scrollHeight })
-    container.scrollTop = 120
-
-    scrollHeight = 1200
-    rerender(<ScheduleView {...props} days={[dayView(25), dayView(26)]} />)
-
-    expect(container.scrollTop).toBe(120)
+    expect(props.onGoToToday).toHaveBeenCalledTimes(1)
   })
 
   it('does not scroll on mount — that belongs to the selected row', () => {
@@ -154,17 +90,16 @@ describe('ScheduleView', () => {
   it('scrolls to the focus day when it moves', () => {
     const scrollIntoView = vi.fn()
     Element.prototype.scrollIntoView = scrollIntoView
-    const { rerender, props } = renderView({ days: [dayView(25), dayView(26)] })
+    const { rerender, props } = renderView()
 
-    rerender(<ScheduleView {...props} days={[dayView(25), dayView(26)]} focusDayStart={day(26)} />)
+    rerender(<ScheduleView {...props} focusDayStart={day(26)} />)
 
     expect(scrollIntoView).toHaveBeenCalledTimes(1)
     Reflect.deleteProperty(Element.prototype, 'scrollIntoView')
   })
 
   it('gives the selection to the day that holds it, and to no other', () => {
-    const days = [dayView(25), dayView(26)]
-    renderView({ days, selectedPeriod: days[1].periods[2] })
+    renderView({ selectedPeriod: threeDays[2].periods[2] })
 
     const selected = screen.getAllByRole('option', { selected: true })
 

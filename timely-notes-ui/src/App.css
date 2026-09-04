@@ -55,16 +55,6 @@
   color: var(--danger);
 }
 
-.app__rollover-action {
-  padding: 0.1rem 0.5rem;
-  font: inherit;
-  color: inherit;
-  background: none;
-  border: 1px solid currentColor;
-  border-radius: 999px;
-  cursor: pointer;
-}
-
 
 .schedule-picker {
   display: flex;
@@ -94,6 +84,15 @@
 }
 
 
+/* The scroller between two identical toolbars: they stay put, only the three days move. */
+.schedule {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
 .schedule-view {
   flex: 1 1 auto;
   min-height: 0;
@@ -104,12 +103,27 @@
   background: var(--surface);
 }
 
-/*
- * Markers the observer watches; reaching one grows the view by a day. A pixel tall, not zero: a
- * zero-height box flush with the end of the scroll content never reports as intersecting.
- */
-.schedule-view__sentinel {
-  height: 1px;
+.schedule__nav {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.schedule__nav-button {
+  flex: 1 1 0;
+  padding: 0.35rem 1rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 0.5rem;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.schedule__nav-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .day-section__day {
@@ -279,4 +293,115 @@
   background: var(--accent-tint);
   border-color: var(--accent);
   font-weight: 600;
+}
+
+
+.calendar-dialog {
+  width: min(26rem, 92vw);
+  padding: 1rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 0.75rem;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.calendar-dialog::backdrop {
+  background: rgb(0 0 0 / 0.4);
+}
+
+.calendar-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.calendar-dialog__title {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.calendar-dialog__status {
+  margin: 0 0 0.5rem;
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+}
+
+.calendar-dialog__header button,
+.calendar-dialog__actions button {
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 0.5rem;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.calendar-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.75rem;
+}
+
+.month-grid__weekdays,
+.month-grid__days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 0.25rem;
+}
+
+.month-grid__weekday {
+  padding-bottom: 0.25rem;
+  font-size: 0.7rem;
+  text-align: center;
+  color: var(--ink-muted);
+}
+
+.month-grid__day {
+  position: relative;
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 0.4rem;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.month-grid__day[data-outside] {
+  color: var(--ink-muted);
+  opacity: 0.55;
+}
+
+.month-grid__day[aria-current='date'] {
+  border-color: var(--line-strong);
+  font-weight: 600;
+}
+
+.month-grid__day[aria-pressed='true'] {
+  background: var(--accent-tint);
+  border-color: var(--accent);
+}
+
+.month-grid__day:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Bottom-centred, so it never collides with the day number. */
+.month-grid__marker {
+  position: absolute;
+  bottom: 0.2rem;
+  width: 0.3rem;
+  height: 0.3rem;
+  border-radius: 50%;
+  background: var(--accent);
 }

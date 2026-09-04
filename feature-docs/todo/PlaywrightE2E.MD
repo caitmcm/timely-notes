@@ -17,10 +17,9 @@ jsdom is a simulation, and three things the app genuinely depends on are simulat
   neither. So `NoteDialog`'s modality, its focus behaviour and its `onCancel` (Escape) path have
   never been executed — the Escape-to-close wiring is untested code.
 - **Layout.** `App.css` makes the day column a fixed-height flex stack so that a 6h row is exactly
-  six times a 1h row, `DaySection` scrolls the selected row into view on mount, and the schedule
-  grows a day at a time as its scroll container reaches an edge — an IntersectionObserver against
-  real layout. jsdom has no layout engine: every box is 0×0, `scrollIntoView` is a no-op and the
-  observer is a stub driven by hand. All of it is asserted only by eye.
+  six times a 1h row, `DaySection` scrolls the selected row into view on mount, and the three-day
+  column is scrolled end to end between the two `Calendar` buttons. jsdom has no layout engine:
+  every box is 0×0 and `scrollIntoView` is a no-op. All of it is asserted only by eye.
 - **MDXEditor.** The dialog tests mount the real editor, but only ever read text out of it. Typing,
   the toolbar and the markdown shortcuts — the whole reason the editor is there — are unexercised.
 
@@ -122,6 +121,7 @@ timely-notes-ui/
     ├── selection.spec.ts         # §4
     ├── schedule.spec.ts          # §5
     ├── api-contract.spec.ts      # §5
+    ├── calendar.spec.ts          # §5b
     ├── note-dialog.spec.ts       # §6
     ├── layout.spec.ts            # §7
     └── backend.spec.ts           # §8, tagged @integrated
@@ -196,7 +196,8 @@ buckets; the E2E column is what §3–§8 implement.
 | `ScheduleView` → one row per period | 24 / 8 / 4 rows at `1h` / `3h` / `6h` | Through a real schedule switch, not a prop |
 | `ScheduleView` → exactly one row current | Exactly one `aria-current` row, named `18:00 – 21:00` | — |
 | `ScheduleView` → one row selected, holding Note | Exactly one Note button on the page, inside the selected row | — |
-| `ScheduleView` → grows as the container is scrolled | Scrolling to the bottom appends `26/08/2026`; scrolling to the top prepends `24/08/2026` | Real layout and a real IntersectionObserver |
+| `ScheduleView` → three days, bounded | `24/08/2026`, `25/08/2026` and `26/08/2026` render; scrolling to either end adds no day and issues no request | Real layout: the container's height never changes mid-scroll |
+| `App` → the calendar navigates | The `Calendar` button opens the month grid, a month back and a seeded day picked re-points the view at that day and its neighbours | Real `<dialog>` modality, and one window per jump |
 | `PeriodRow` → start time in the gutter | The gutter reads `00:00` … `21:00` in order at `3h` | Real DOM order |
 | `PeriodRow` → note labelled with time and excerpt | A note button reads `19:30 Stand-up`, excerpted from markdown | — |
 | `PeriodRow` → opens a note without re-selecting | Clicking a note in an **unselected** row opens it titled with that row's range and leaves the selection where it was | `stopPropagation` against a real event path |
@@ -282,7 +283,7 @@ buckets; the E2E column is what §3–§8 implement.
 
 ### 3. Day view — `e2e/day-view.spec.ts`
 
-- [ ] The day is headed `25/08/2026`, and it is the only day rendered until the view is scrolled.
+- [ ] Three days render — `24/08/2026`, `25/08/2026` and `26/08/2026` — with the focus day in view.
 - [ ] `3h` renders 8 rows, and the gutter reads `00:00` … `21:00` in order.
 - [ ] Exactly one row carries `aria-current="time"`, and it is `18:00 – 21:00`.
 - [ ] Seeded notes render in the row their `occursAt` falls in, though their `createdAt` is 28/08.
@@ -327,6 +328,25 @@ buckets; the E2E column is what §3–§8 implement.
 - [ ] The same spec under a UTC+12 timezone override sends `+12:00` and that zone's *local*
       midnights — the browser-level stand-in for the structural assertions the unit tests make.
 - [ ] The path is `/api/schedules/{shortName}/notes`, same-origin.
+
+### 5b. Calendar navigation — `e2e/calendar.spec.ts`
+
+Replaces the scroll-growth journey `ScrollingSchedule.MD` asked for: the view is bounded now, and
+the calendar is how the user goes anywhere else (`CalendarNavigation.MD`).
+
+- [ ] Scrolling the container to either end reveals a `Calendar` button, adds no fourth day and
+      issues no request — the container's `scrollHeight` is unchanged after the scroll.
+- [ ] `Calendar` opens a modal month grid headed `August 2026`, and it is genuinely modal.
+- [ ] The grid asks `/api/schedules/s3/note-days` exactly once, for the whole grid, and not at all
+      before it is opened.
+- [ ] Seeded days carry a marker; days with no notes do not.
+- [ ] `Previous month` shows `July 2026` and issues exactly one further count request; going back
+      to August issues none.
+- [ ] Picking a seeded day closes the calendar, renders that day and its two neighbours with their
+      notes, and issues exactly **one** notes request — for that three-day window, with nothing
+      asked for in between.
+- [ ] The jump raises `Go to today`; pressing it returns to the current three days.
+- [ ] `Escape` closes the calendar and leaves the view where it was.
 
 ### 6. The note dialog and the editor — `e2e/note-dialog.spec.ts`
 

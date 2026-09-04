@@ -38,4 +38,16 @@ Accept: application/json
 GET {{TimelyNotes.API_HostAddress}}/api/schedules/s1/notes?searchFrom={{searchFrom}}
 Accept: application/json
 
+### Per-day note counts for a month grid — 42 days at most, grouped in searchFrom's offset
+GET {{TimelyNotes.API_HostAddress}}/api/schedules/s1/note-days?searchFrom=2026-08-31T00:00:00%2B01:00&searchTo=2026-10-05T00:00:00%2B01:00
+Accept: application/json
+
+### The same window for the 6-hourly Schedule
+GET {{TimelyNotes.API_HostAddress}}/api/schedules/s6/note-days?searchFrom=2026-08-31T00:00:00%2B01:00&searchTo=2026-10-05T00:00:00%2B01:00
+Accept: application/json
+
+### Too wide — 43 days is a 400
+GET {{TimelyNotes.API_HostAddress}}/api/schedules/s1/note-days?searchFrom=2026-08-31T00:00:00%2B01:00&searchTo=2026-10-13T00:00:00%2B01:00
+Accept: application/json
+
 ###

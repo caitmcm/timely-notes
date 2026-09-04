@@ -1,3 +1,4 @@
+import { dayStartOf } from '../domain/days'
 import type { Note, ScheduleShortName } from '../types'
 
 /** Mirrors the API's `NoteResponse`. */
@@ -62,4 +63,42 @@ export async function getNotesBySchedule(
   const payload: NoteResponse[] = await response.json()
 
   return payload.map(toNote)
+}
+
+/** Mirrors the API's `NoteDayResponse`; `day` is midnight carrying the offset we asked in. */
+interface NoteDayResponse {
+  day: string
+  count: number
+}
+
+/** How many notes fall on a day, keyed by the same local day start the note cache uses. */
+export interface NoteDay {
+  dayStart: number
+  count: number
+}
+
+/**
+ * Per-day note counts over the half-open window `[searchFrom, searchTo)`; the server rejects a
+ * window wider than 42 days. Days with no notes are absent rather than zero.
+ */
+export async function getNoteDaysBySchedule(
+  shortName: ScheduleShortName,
+  searchFrom: Date,
+  searchTo: Date,
+  signal: AbortSignal,
+): Promise<NoteDay[]> {
+  const query = new URLSearchParams({
+    searchFrom: toOffsetIso(searchFrom),
+    searchTo: toOffsetIso(searchTo),
+  })
+
+  const response = await fetch(`/api/schedules/${shortName}/note-days?${query}`, { signal })
+
+  if (!response.ok) {
+    throw new Error(`Failed to load note days for schedule ${shortName}: ${response.status}`)
+  }
+
+  const payload: NoteDayResponse[] = await response.json()
+
+  return payload.map((entry) => ({ dayStart: dayStartOf(new Date(entry.day)), count: entry.count }))
 }

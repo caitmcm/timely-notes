@@ -1,4 +1,4 @@
-import { getNotesBySchedule } from './notesApi'
+import { getNoteDaysBySchedule, getNotesBySchedule } from './notesApi'
 
 /** The default window App sends: yesterday's midnight to the day after tomorrow's. */
 const searchFrom = new Date(2026, 7, 24)
@@ -118,6 +118,69 @@ describe('getNotesBySchedule', () => {
 
     await expect(
       getNotesBySchedule('s3', searchFrom, searchTo, new AbortController().signal),
+    ).rejects.toThrow(/500/)
+  })
+})
+
+describe('getNoteDaysBySchedule', () => {
+  const gridFrom = new Date(2026, 7, 31)
+  const gridTo = new Date(2026, 9, 5)
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('requests the note-days route for the given short name', async () => {
+    const fetchMock = stubFetch()
+
+    await getNoteDaysBySchedule('s3', gridFrom, gridTo, new AbortController().signal)
+
+    expect(calledUrl(fetchMock).parsed.pathname).toBe('/api/schedules/s3/note-days')
+  })
+
+  it('sends the window as offset-carrying instants, percent-encoded', async () => {
+    const fetchMock = stubFetch()
+
+    await getNoteDaysBySchedule('s1', gridFrom, gridTo, new AbortController().signal)
+
+    const { raw, parsed } = calledUrl(fetchMock)
+    const offsetIso = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/
+    expect(new Date(parsed.searchParams.get('searchFrom')!).getTime()).toBe(gridFrom.getTime())
+    expect(new Date(parsed.searchParams.get('searchTo')!).getTime()).toBe(gridTo.getTime())
+    expect(parsed.searchParams.get('searchFrom')).toMatch(offsetIso)
+    expect(raw.slice(raw.indexOf('?'))).not.toMatch(/[+:]/)
+  })
+
+  it('parses each day to a local midnight', async () => {
+    const day = new Date(2026, 8, 3)
+    // The instant the server means, written as UTC: parsing must land on the *local* day.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(okResponse([{ day: day.toISOString(), count: 2 }])),
+    )
+
+    const days = await getNoteDaysBySchedule('s1', gridFrom, gridTo, new AbortController().signal)
+
+    expect(days).toEqual([{ dayStart: day.getTime(), count: 2 }])
+  })
+
+  it('forwards the abort signal to fetch', async () => {
+    const fetchMock = stubFetch()
+    const { signal } = new AbortController()
+
+    await getNoteDaysBySchedule('s1', gridFrom, gridTo, signal)
+
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ signal })
+  })
+
+  it('rejects on a non-2xx response', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) } as Response),
+    )
+
+    await expect(
+      getNoteDaysBySchedule('s1', gridFrom, gridTo, new AbortController().signal),
     ).rejects.toThrow(/500/)
   })
 })

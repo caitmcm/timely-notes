@@ -189,4 +189,119 @@ public class InMemoryNoteRepositoryTests
         Assert.NotNull(notes);
         Assert.Empty(notes);
     }
+
+    [Fact]
+    public async Task GetDayCountsBySchedule_ReturnsOneEntryPerDayThatHasNotes()
+    {
+        var repository = new InMemoryNoteRepository();
+
+        var counts = await repository.GetDayCountsBySchedule(
+            "s1", WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken);
+        var notes = await repository.GetBySchedule(
+            "s1", WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken);
+
+        Assert.Equal(notes.Select(note => note.OccursAt.Date).Distinct().Count(), counts.Count);
+        Assert.All(counts, count => Assert.True(count.Count > 0));
+        Assert.Equal(notes.Count, counts.Sum(count => count.Count));
+    }
+
+    [Fact]
+    public async Task GetDayCountsBySchedule_CountsEveryNoteOnADay()
+    {
+        var repository = new InMemoryNoteRepository();
+
+        var counts = await repository.GetDayCountsBySchedule(
+            "s1", Today, Day(1), TestContext.Current.CancellationToken);
+
+        // The seed puts two s1 notes on today.
+        var today = Assert.Single(counts);
+        Assert.Equal(Today, today.Day);
+        Assert.Equal(2, today.Count);
+    }
+
+    [Fact]
+    public async Task GetDayCountsBySchedule_OrdersDaysAscending()
+    {
+        var repository = new InMemoryNoteRepository();
+
+        var counts = await repository.GetDayCountsBySchedule(
+            "s1", WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken);
+
+        Assert.Equal(counts.OrderBy(count => count.Day), counts);
+    }
+
+    [Fact]
+    public async Task GetDayCountsBySchedule_OmitsDaysWithNoNotes()
+    {
+        var repository = new InMemoryNoteRepository();
+
+        var counts = await repository.GetDayCountsBySchedule(
+            "s1", WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken);
+
+        // The seed leaves day +2 empty for s1.
+        Assert.DoesNotContain(counts, count => count.Day == Day(2));
+    }
+
+    [Fact]
+    public async Task GetDayCountsBySchedule_HonoursTheHalfOpenWindow()
+    {
+        var repository = new InMemoryNoteRepository();
+        var all = await repository.GetBySchedule(
+            "s1", WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken);
+        var first = all.Min(note => note.OccursAt);
+        var last = all.Max(note => note.OccursAt);
+
+        var counts = await repository.GetDayCountsBySchedule(
+            "s1", first, last, TestContext.Current.CancellationToken);
+
+        Assert.Contains(counts, count => count.Day == new DateTimeOffset(first.Date, first.Offset));
+        Assert.Equal(all.Count - 1, counts.Sum(count => count.Count));
+    }
+
+    [Fact]
+    public async Task GetDayCountsBySchedule_DropsAnotherSchedulesNotes()
+    {
+        var repository = new InMemoryNoteRepository();
+
+        var counts = await repository.GetDayCountsBySchedule(
+            "s1", Today, Day(1), TestContext.Current.CancellationToken);
+        var otherNotes = await repository.GetBySchedule(
+            "s3", Today, Day(1), TestContext.Current.CancellationToken);
+
+        Assert.NotEmpty(otherNotes);
+        Assert.Equal(2, counts.Sum(count => count.Count));
+    }
+
+    [Fact]
+    public async Task GetDayCountsBySchedule_GroupsInSearchFromsOffset()
+    {
+        var repository = new InMemoryNoteRepository();
+        var seedOffset = Today.Offset;
+        // Far enough east that the seed's 18:00 notes fall on the following day.
+        var shifted = seedOffset + TimeSpan.FromHours(10);
+
+        var atSeedOffset = await repository.GetDayCountsBySchedule(
+            "s6", WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken);
+        var atShiftedOffset = await repository.GetDayCountsBySchedule(
+            "s6", WholeSeed.From.ToOffset(shifted), WholeSeed.To, TestContext.Current.CancellationToken);
+
+        Assert.All(atSeedOffset, count => Assert.Equal(seedOffset, count.Day.Offset));
+        Assert.All(atShiftedOffset, count => Assert.Equal(shifted, count.Day.Offset));
+        // The same instants, bucketed differently: the 18:00 notes move on to the following day.
+        Assert.NotEqual(
+            atSeedOffset.Select(count => (count.Day.Date, count.Count)),
+            atShiftedOffset.Select(count => (count.Day.Date, count.Count)));
+    }
+
+    [Fact]
+    public async Task GetDayCountsBySchedule_ReturnsAnEmptyList_ForARangeHoldingNothing()
+    {
+        var repository = new InMemoryNoteRepository();
+
+        var counts = await repository.GetDayCountsBySchedule(
+            "s1", Day(300), Day(301), TestContext.Current.CancellationToken);
+
+        Assert.NotNull(counts);
+        Assert.Empty(counts);
+    }
 }

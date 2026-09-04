@@ -35,6 +35,30 @@ public class InMemoryNoteRepository : INoteRepository
         return Task.FromResult(notes);
     }
 
+    /// <inheritdoc />
+    public Task<IReadOnlyList<NoteDayCount>> GetDayCountsBySchedule(
+        string scheduleShortName,
+        DateTimeOffset searchFrom,
+        DateTimeOffset searchTo,
+        CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+
+        var offset = searchFrom.Offset;
+
+        IReadOnlyList<NoteDayCount> counts =
+        [
+            .. _notes
+                .Where(note => note.ScheduleShortName == scheduleShortName)
+                .Where(note => note.OccursAt >= searchFrom && note.OccursAt < searchTo)
+                .GroupBy(note => note.OccursAt.ToOffset(offset).Date)
+                .Select(day => new NoteDayCount(new DateTimeOffset(day.Key, offset), day.Count()))
+                .OrderBy(count => count.Day)
+        ];
+
+        return Task.FromResult(counts);
+    }
+
     private static IEnumerable<Note> SeedNotes()
     {
         var today = new DateTimeOffset(DateTime.Today, DateTimeOffset.Now.Offset);

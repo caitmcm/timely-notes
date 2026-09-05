@@ -2,6 +2,7 @@
 bin/
 obj/
 *.user
+TestResults/
 
 # Visual Studio / Rider
 .vs/
@@ -13,3 +14,13 @@ Thumbs.db
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Secrets — nothing here needs these yet; they are here so an accident can't happen
+.env
+.env.*
+secrets.json
+*.pfx
+*.p12
+*.pem
+*.key
+*.snk

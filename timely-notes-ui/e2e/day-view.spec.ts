@@ -46,28 +46,32 @@ test('marks exactly one row as current, on the focus day', async ({ page, schedu
   await expect(scheduleView.day('26/08/2026').currentRow).toHaveCount(0)
 })
 
-test('places notes by occursAt, though they were written on another day', async ({
+test('places a note by its period, though it was written on another day', async ({
   scheduleView,
 }) => {
   const day = scheduleView.day(FOCUS)
 
-  await expect(day.row('09:00 – 12:00').getByRole('button')).toHaveCount(2)
-  await expect(day.note('15:00 Afternoon block: wired up FastEndpoints.')).toBeVisible()
+  await expect(day.row('09:00 – 12:00')).toContainText('Morning block: drafted the TDD plan.')
+  await expect(day.row('15:00 – 18:00')).toContainText('Afternoon block: wired up FastEndpoints.')
 })
 
-test('places a note on the day it occurs on, not the focus day', async ({ scheduleView }) => {
-  await expect(scheduleView.day('26/08/2026').note('09:00 Tomorrow: review the schedule.')).toBeVisible()
-  await expect(scheduleView.day(FOCUS).note('09:00 Tomorrow: review the schedule.')).toHaveCount(0)
+test('places a note on the day it is addressed to, not the focus day', async ({ scheduleView }) => {
+  await expect(scheduleView.day('26/08/2026').noteText('Tomorrow: review the schedule.')).toBeVisible()
+  await expect(scheduleView.day(FOCUS).noteText('Tomorrow: review the schedule.')).toHaveCount(0)
 })
 
-test('lists two notes in one period oldest first', async ({ scheduleView }) => {
-  const notes = scheduleView.day(FOCUS).row('09:00 – 12:00').getByRole('button')
+test('holds one entry in a filled row, as text, with no time of day and nothing to press', async ({
+  scheduleView,
+}) => {
+  const row = scheduleView.day(FOCUS).row('09:00 – 12:00')
 
-  await expect(notes).toHaveText([/^09:00 Morning block/, /^10:30 Second thoughts/])
+  await expect(scheduleView.day(FOCUS).noteText('Morning block')).toHaveCount(1)
+  await expect(row.getByRole('button')).toHaveCount(0)
+  await expect(row).not.toContainText(/d{2}:d{2}s+Morning block/)
 })
 
-test('labels a note with its time and a one-line excerpt', async ({ scheduleView }) => {
-  await expect(scheduleView.day(FOCUS).note('19:30 Stand-up')).toBeVisible()
+test('shows a one-line excerpt of markdown content', async ({ scheduleView }) => {
+  await expect(scheduleView.day(FOCUS).noteText('Stand-up')).toBeVisible()
 })
 
 test('puts nothing note-shaped in an empty period', async ({ scheduleView }) => {
@@ -83,7 +87,7 @@ test('shows the loading marker in each day while the reply is in flight', async 
   await scheduleView.open()
 
   await expect(page.getByRole('status')).toHaveCount(3)
-  await expect(scheduleView.day(FOCUS).note('19:30 Stand-up')).toBeVisible()
+  await expect(scheduleView.day(FOCUS).noteText('Stand-up')).toBeVisible()
   await expect(page.getByRole('status')).toHaveCount(0)
 })
 

@@ -207,6 +207,16 @@ clock; the two components that take `now` keep taking it as a prop.
 
 ### 4. `occursAt` for a new note (`src/domain/notes.ts`)
 
+> **Overturned by `OneNotePerPeriod.MD` (2026-09-05).** `occursAtFor` is deleted and `Note` carries
+> no `occursAt` at all. This section existed so that several notes in one period could be told apart
+> by their live instant (`09:47` rather than `09:00`). A period now holds at most one note, so there
+> is nothing to tell apart — and the instant was itself what made a second, unreachable note in one
+> period constructible: `assignNotes` placed a note by containment while a row's button addressed
+> `period.start`, two rules for one relationship. A note is addressed by
+> `(Schedule, Day, PeriodOrdinal)` and by nothing else, and `App.handleSave` logs that address where
+> it logged the stamp. The rest of this document — `useNow`, the viewed-day/current-day split, the
+> rollover rules — still stands.
+
 - [x] Test first in `domain/notes.test.ts`.
 - [x] `occursAtFor(period: Period, now: Date): Date` — `now` when `isCurrentPeriod(period, now)`,
       otherwise `period.start`. Cover: the live slot returns the instant itself; a past slot and

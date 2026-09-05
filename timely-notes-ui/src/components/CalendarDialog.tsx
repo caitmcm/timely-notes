@@ -1,20 +1,21 @@
 import { useEffect, useRef } from 'react'
 import { addMonths, formatMonthHeading } from '../domain/months'
 import MonthGrid from './MonthGrid'
+import type { DayKey } from '../types'
 
 interface CalendarDialogProps {
   isOpen: boolean
   /** The month on show; the dialog holds no month state of its own. */
-  monthStart: number
-  weeks: number[][]
-  currentDayStart: number
-  focusDayStart: number
-  countFor: (dayStart: number) => number
+  monthStart: DayKey
+  weeks: DayKey[][]
+  currentDay: DayKey
+  focusDay: DayKey
+  countFor: (day: DayKey) => number
   /** The grid renders regardless: a marker is an extra, not what the calendar is for. */
   isLoading: boolean
   error: string | null
-  onChangeMonth: (monthStart: number) => void
-  onPickDay: (dayStart: number) => void
+  onChangeMonth: (monthStart: DayKey) => void
+  onPickDay: (day: DayKey) => void
   onClose: () => void
 }
 
@@ -23,8 +24,8 @@ function CalendarDialog({
   isOpen,
   monthStart,
   weeks,
-  currentDayStart,
-  focusDayStart,
+  currentDay,
+  focusDay,
   countFor,
   isLoading,
   error,
@@ -70,8 +71,8 @@ function CalendarDialog({
       <MonthGrid
         weeks={weeks}
         monthStart={monthStart}
-        currentDayStart={currentDayStart}
-        focusDayStart={focusDayStart}
+        currentDay={currentDay}
+        focusDay={focusDay}
         countFor={countFor}
         onPickDay={onPickDay}
       />

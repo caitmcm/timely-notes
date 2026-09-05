@@ -1,20 +1,20 @@
 import { useEffect, useRef, type Ref } from 'react'
 import { formatDayHeading, isCurrentPeriod } from '../domain/periods'
-import type { Note, Period } from '../types'
+import type { DayKey, Period, SpanHours } from '../types'
 import PeriodRow from './PeriodRow'
 
 interface DaySectionProps {
-  day: Date
+  day: DayKey
   periods: Period[]
+  spanHours: SpanHours
   /** Injected so tests are deterministic — never read the clock inside the component. */
   now: Date
-  /** `undefined` unless the selected period falls on this day. */
-  selectedPeriod: Period | undefined
+  /** `null` unless the selection falls on this day. */
+  selectedOrdinal: number | null
   /** The rows render regardless; the day is readable and scrollable before its notes land. */
   isLoading: boolean
   onSelect: (period: Period) => void
-  onTakeNote: (period: Period) => void
-  onOpenNote: (period: Period, note: Note) => void
+  onOpenNote: (period: Period) => void
   /** Set by the scrolling view so it can observe and scroll to this day (React 19 ref-as-prop). */
   ref?: Ref<HTMLElement>
 }
@@ -23,11 +23,11 @@ interface DaySectionProps {
 function DaySection({
   day,
   periods,
+  spanHours,
   now,
-  selectedPeriod,
+  selectedOrdinal,
   isLoading,
   onSelect,
-  onTakeNote,
   onOpenNote,
   ref,
 }: DaySectionProps) {
@@ -41,7 +41,7 @@ function DaySection({
   }, [])
 
   return (
-    <section ref={ref} className="day-section" data-day={day.getTime()}>
+    <section ref={ref} className="day-section" data-day={day}>
       <h2 className="day-section__day">
         {heading}
         {isLoading && (
@@ -53,17 +53,17 @@ function DaySection({
 
       <ul className="day-section__periods" role="listbox" aria-label={heading}>
         {periods.map((period) => {
-          const isSelected = period.start.getTime() === selectedPeriod?.start.getTime()
+          const isSelected = period.ordinal === selectedOrdinal
 
           return (
             <PeriodRow
-              key={period.start.getTime()}
+              key={period.ordinal}
               ref={isSelected ? selectedRef : undefined}
               period={period}
-              isCurrent={isCurrentPeriod(period, now)}
+              spanHours={spanHours}
+              isCurrent={isCurrentPeriod(period, day, now, spanHours)}
               isSelected={isSelected}
               onSelect={onSelect}
-              onTakeNote={onTakeNote}
               onOpenNote={onOpenNote}
             />
           )

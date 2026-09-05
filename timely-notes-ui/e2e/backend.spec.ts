@@ -41,18 +41,18 @@ test.describe('@integrated', () => {
     await scheduleView.open()
     const day = scheduleView.day(headingFor(frozenAt))
 
-    await expect(day.row('09:00 – 12:00').getByRole('button')).toHaveText([
-      '09:00 Morning block: drafted the TDD plan.',
-    ])
-    await expect(day.note('15:00 Afternoon block: wired up FastEndpoints.')).toBeVisible()
+    await expect(day.row('09:00 – 12:00')).toContainText('Morning block: drafted the TDD plan.')
+    await expect(day.row('15:00 – 18:00')).toContainText(
+      'Afternoon block: wired up FastEndpoints.',
+    )
 
     await scheduleView.schedule('1h').click()
-    await expect(day.note('09:00 Stand-up')).toBeVisible()
-    await expect(day.note('14:00 Afternoon')).toBeVisible()
+    await expect(day.row('09:00 – 10:00')).toContainText('Stand-up')
+    await expect(day.row('14:00 – 15:00')).toContainText('Afternoon')
 
     await scheduleView.schedule('6h').click()
-    await expect(day.note('06:00 First half of the day, in one go.')).toBeVisible()
-    await expect(day.note('18:00 Evening wrap-up: slice one is close.')).toBeVisible()
+    await expect(day.row('06:00 – 12:00')).toContainText('First half of the day, in one go.')
+    await expect(day.row('18:00 – 00:00')).toContainText('Evening wrap-up: slice one is close.')
   })
 
   test('opens a seeded note with its content in the editor', async ({
@@ -61,17 +61,16 @@ test.describe('@integrated', () => {
   }) => {
     await scheduleView.open()
 
-    await scheduleView
-      .day(headingFor(frozenAt))
-      .note('09:00 Morning block: drafted the TDD plan.')
-      .click()
+    const day = scheduleView.day(headingFor(frozenAt))
+    await day.row('09:00 – 12:00').click()
+    await day.noteButton.click()
 
     await expect(scheduleView.editor).toContainText('Morning block: drafted the TDD plan.')
   })
 
   /**
-   * The only integrated cover for the counts route, and it earns its place: the offset grouping is
-   * exactly what the two projects can silently disagree about. The seed moves with the API
+   * The only integrated cover for the counts route, and it earns its place: how a day is spelled on
+   * the wire is exactly what the two projects can silently disagree about. The seed moves with the API
    * process's own `DateTime.Today` and the grid's edges move with the month, so this asserts that
    * *some* day is marked and that today is one — never an exact set.
    */

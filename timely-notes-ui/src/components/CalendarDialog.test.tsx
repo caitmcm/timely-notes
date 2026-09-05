@@ -1,12 +1,12 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { addMonths, monthGrid, monthStartOf } from '../domain/months'
+import { toDayKey } from '../domain/days'
 import CalendarDialog from './CalendarDialog'
 
-const day = (year: number, month: number, dayOfMonth: number) =>
-  new Date(year, month, dayOfMonth).getTime()
+const day = toDayKey
 
-const september = monthStartOf(day(2026, 8, 1))
+const september = monthStartOf(day('2026-09-01'))
 
 type Props = Parameters<typeof CalendarDialog>[0]
 
@@ -23,8 +23,8 @@ const renderDialog = (overrides: Partial<Props> = {}) => {
       isOpen
       monthStart={september}
       weeks={monthGrid(september)}
-      currentDayStart={day(2026, 8, 17)}
-      focusDayStart={day(2026, 8, 17)}
+      currentDay={day('2026-09-17')}
+      focusDay={day('2026-09-17')}
       countFor={() => 0}
       isLoading={false}
       error={null}
@@ -89,7 +89,7 @@ describe('CalendarDialog', () => {
 
     await userEvent.click(screen.getByRole('button', { name: '22' }))
 
-    expect(onPickDay).toHaveBeenCalledWith(day(2026, 8, 22))
+    expect(onPickDay).toHaveBeenCalledWith('2026-09-22')
   })
 
   it('renders the days while the counts are still loading', () => {

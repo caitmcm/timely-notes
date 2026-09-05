@@ -1,36 +1,43 @@
 import { expect, test } from './fixtures/app'
+import type { ScheduleView } from './fixtures/ScheduleView'
 
 const FOCUS = '25/08/2026'
 
-/** `App.handleSave` logs the markdown beside the note's `occursAt`; the markdown comes first. */
+/** `App.handleSave` logs the markdown, then the address; the markdown comes first. */
 const saved = (logs: string[]) => logs.at(-1) ?? ''
+
+/** The only way into a period: select its row, then press its one button. */
+const openNote = async (scheduleView: ScheduleView, label: string) => {
+  const day = scheduleView.day(FOCUS)
+  await day.row(label).click()
+  await day.noteButton.click()
+}
 
 test.beforeEach(async ({ scheduleView }) => {
   await scheduleView.open()
 })
 
-test('opens a blank editor headed with the selected period', async ({ scheduleView }) => {
-  await scheduleView.day(FOCUS).noteButton.click()
+test('opens a blank editor headed with an empty selected period', async ({ scheduleView }) => {
+  await openNote(scheduleView, '00:00 – 03:00')
 
-  await expect(scheduleView.dialog.getByRole('heading').first()).toHaveText('18:00 – 21:00')
+  await expect(scheduleView.dialog.getByRole('heading').first()).toHaveText('00:00 – 03:00')
   await expect(scheduleView.editor).toHaveText('')
 })
 
-test('opens an existing note with its markdown rendered, not flattened', async ({
+test('opens the period’s existing note with its markdown rendered, not flattened', async ({
   scheduleView,
 }) => {
-  await scheduleView.day(FOCUS).note('19:30 Stand-up').click()
+  await openNote(scheduleView, '18:00 – 21:00')
 
   await expect(scheduleView.editor.getByRole('heading', { name: 'Stand-up' })).toBeVisible()
   await expect(scheduleView.editor).toContainText('Blocked.')
 })
 
-test('heads the dialog with the note’s own period, not the selected one', async ({
-  scheduleView,
-}) => {
-  await scheduleView.day(FOCUS).note('09:00 Morning block: drafted the TDD plan.').click()
+test('heads the dialog with the period it was opened on', async ({ scheduleView }) => {
+  await openNote(scheduleView, '09:00 – 12:00')
 
   await expect(scheduleView.dialog.getByRole('heading').first()).toHaveText('09:00 – 12:00')
+  await expect(scheduleView.editor).toContainText('Morning block: drafted the TDD plan.')
 })
 
 test('is genuinely modal: focus is inside it and the day behind is inert', async ({
@@ -60,24 +67,28 @@ test('closes on Escape', async ({ logs, page, scheduleView }) => {
 })
 
 test('closes on Cancel without reporting anything', async ({ logs, scheduleView }) => {
-  await scheduleView.day(FOCUS).note('19:30 Stand-up').click()
+  await openNote(scheduleView, '18:00 – 21:00')
   await scheduleView.cancel.click()
 
   await expect(scheduleView.dialog).toHaveCount(0)
   expect(logs).toEqual([])
 })
 
-test('reports the editor’s markdown on Save, then closes', async ({ logs, scheduleView }) => {
-  await scheduleView.day(FOCUS).note('19:30 Stand-up').click()
+test('reports the editor’s markdown and the period’s address on Save, then closes', async ({
+  logs,
+  scheduleView,
+}) => {
+  await openNote(scheduleView, '18:00 – 21:00')
   await scheduleView.save.click()
 
   await expect(scheduleView.dialog).toHaveCount(0)
   expect(saved(logs)).toContain('# Stand-up')
   expect(saved(logs)).toContain('Blocked.')
+  expect(saved(logs)).toContain('2026-08-25 7')
 })
 
 test('reports what was typed into a blank editor', async ({ logs, scheduleView }) => {
-  await scheduleView.day(FOCUS).noteButton.click()
+  await openNote(scheduleView, '00:00 – 03:00')
   await scheduleView.editor.click()
   await scheduleView.editor.pressSequentially('Wrote this in a real browser.')
   await scheduleView.save.click()
@@ -91,7 +102,7 @@ test('wraps the selection in ** from the Bold toolbar button', async ({
   page,
   scheduleView,
 }) => {
-  await scheduleView.day(FOCUS).noteButton.click()
+  await openNote(scheduleView, '00:00 – 03:00')
   await scheduleView.editor.click()
   await scheduleView.editor.pressSequentially('emphatic')
 
@@ -106,7 +117,7 @@ test('turns a leading # into a heading, as markdownShortcutPlugin promises', asy
   logs,
   scheduleView,
 }) => {
-  await scheduleView.day(FOCUS).noteButton.click()
+  await openNote(scheduleView, '00:00 – 03:00')
   await scheduleView.editor.click()
   await scheduleView.editor.pressSequentially('# Retro')
 
@@ -116,12 +127,14 @@ test('turns a leading # into a heading, as markdownShortcutPlugin promises', asy
   expect(saved(logs)).toContain('# Retro')
 })
 
-test('gives a blank editor after an existing note is cancelled', async ({ scheduleView }) => {
-  await scheduleView.day(FOCUS).note('19:30 Stand-up').click()
-  await expect(scheduleView.editor).toContainText('Stand-up')
+test('gives a blank editor on an empty period after a filled one was cancelled', async ({
+  scheduleView,
+}) => {
+  await openNote(scheduleView, '09:00 – 12:00')
+  await expect(scheduleView.editor).toContainText('Morning block')
   await scheduleView.cancel.click()
 
-  await scheduleView.day(FOCUS).noteButton.click()
+  await openNote(scheduleView, '00:00 – 03:00')
 
   await expect(scheduleView.editor).toHaveText('')
 })

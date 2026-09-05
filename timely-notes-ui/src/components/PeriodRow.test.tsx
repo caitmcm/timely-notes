@@ -1,30 +1,30 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { buildPeriods } from '../domain/periods'
+import { toDayKey } from '../domain/days'
 import type { Note, Period } from '../types'
 import PeriodRow from './PeriodRow'
 
-const day = new Date(2026, 7, 25)
-const evening = () => buildPeriods(day, 3)[6] // 18:00 – 21:00
+const evening = () => buildPeriods(3)[6] // 18:00 – 21:00
 
-const note = (id: string, hour: number, minute: number, content: string): Note => ({
-  id,
+const note = (content: string): Note => ({
+  day: toDayKey('2026-08-25'),
+  ordinal: 7,
   content,
-  occursAt: new Date(2026, 7, 25, hour, minute),
-  // Deliberately a different day: the row shows the slot, never the write time.
+  // Deliberately a different day: the row shows the period, never the write time.
   createdAt: new Date(2026, 7, 28, 9, 12),
   modifiedAt: new Date(2026, 7, 28, 9, 12),
 })
 
-const withNotes = (period: Period, notes: Note[]): Period => ({ ...period, notes })
+const holding = (period: Period, content: string): Period => ({ ...period, note: note(content) })
 
 function renderRow(overrides: Partial<React.ComponentProps<typeof PeriodRow>> = {}) {
   const props = {
     period: evening(),
+    spanHours: 3 as const,
     isCurrent: false,
     isSelected: false,
     onSelect: vi.fn(),
-    onTakeNote: vi.fn(),
     onOpenNote: vi.fn(),
     ...overrides,
   }
@@ -51,59 +51,55 @@ describe('PeriodRow', () => {
     expect(screen.getByRole('option', { name: '18:00 – 21:00' })).toBeInTheDocument()
   })
 
-  it('has no Note button when it is not selected', () => {
-    renderRow({ isSelected: false })
+  it('shows its note as text, with no time of day and nothing to press', () => {
+    renderRow({ period: holding(evening(), '# Stand-up\n\nBlocked.') })
 
-    expect(screen.queryByRole('button', { name: 'Note' })).not.toBeInTheDocument()
-  })
-
-  it('has a Note button when it is selected', () => {
-    renderRow({ isSelected: true })
-
-    expect(screen.getByRole('button', { name: 'Note' })).toBeInTheDocument()
-  })
-
-  it('selects the period when the row is clicked', async () => {
-    const { onSelect, onTakeNote, period } = renderRow()
-
-    await userEvent.click(screen.getByRole('option'))
-
-    expect(onSelect).toHaveBeenCalledWith(period)
-    expect(onTakeNote).not.toHaveBeenCalled()
-  })
-
-  it('takes a note without re-selecting when Note is pressed', async () => {
-    const { onSelect, onTakeNote, period } = renderRow({ isSelected: true })
-
-    await userEvent.click(screen.getByRole('button', { name: 'Note' }))
-
-    expect(onTakeNote).toHaveBeenCalledWith(period)
-    expect(onSelect).not.toHaveBeenCalled()
+    expect(screen.getByText('Stand-up')).toBeInTheDocument()
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+    expect(screen.getByRole('option')).not.toHaveTextContent(/\d{2}:\d{2}\s+Stand-up/)
   })
 
   it('renders nothing note-shaped for an empty period', () => {
     renderRow()
 
+    expect(screen.getByRole('option')).toHaveTextContent(/^18:00$/)
+  })
+
+  it('has no button at all when it is not selected, note or no note', () => {
+    renderRow({ isSelected: false })
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
 
-  it('renders each existing note as a button labelled with its time and an excerpt', () => {
-    const period = withNotes(evening(), [note('a', 19, 30, '# Stand-up\n\nBlocked.')])
-    renderRow({ period })
+  it.each([
+    ['empty', () => evening()],
+    ['already holding a note', () => holding(evening(), 'Evening wrap-up')],
+  ])('has exactly one button when selected and %s', (_case, period) => {
+    renderRow({ isSelected: true, period: period() })
 
-    expect(screen.getByRole('button', { name: '19:30 Stand-up' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button')).toHaveLength(1)
+    expect(screen.getByRole('button', { name: 'Note' })).toBeInTheDocument()
   })
 
-  it('opens a note with both the period and the note, without re-selecting', async () => {
-    const notes = [note('a', 19, 30, 'Evening wrap-up')]
-    const period = withNotes(evening(), notes)
-    const { onOpenNote, onSelect, onTakeNote } = renderRow({ period, isSelected: true })
+  it('selects the period when the row is clicked', async () => {
+    const { onSelect, onOpenNote, period } = renderRow()
 
-    await userEvent.click(screen.getByRole('button', { name: '19:30 Evening wrap-up' }))
+    await userEvent.click(screen.getByRole('option'))
 
-    expect(onOpenNote).toHaveBeenCalledWith(period, notes[0])
+    expect(onSelect).toHaveBeenCalledWith(period)
+    expect(onOpenNote).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['an empty period', () => evening()],
+    ['the period’s existing note', () => holding(evening(), 'Evening wrap-up')],
+  ])('opens %s without re-selecting', async (_case, build) => {
+    const period = build()
+    const { onOpenNote, onSelect } = renderRow({ period, isSelected: true })
+
+    await userEvent.click(screen.getByRole('button', { name: 'Note' }))
+
+    expect(onOpenNote).toHaveBeenCalledWith(period)
     expect(onSelect).not.toHaveBeenCalled()
-    expect(onTakeNote).not.toHaveBeenCalled()
   })
 
   it('marks the current period with aria-current="time"', () => {

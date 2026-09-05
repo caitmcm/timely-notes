@@ -1,24 +1,24 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import { monthGrid, monthStartOf } from '../domain/months'
+import { addDays, toDayKey } from '../domain/days'
 import { SCHEDULES } from '../domain/schedules'
-import type { Schedule } from '../types'
+import type { DayKey, Schedule } from '../types'
 import { useNoteDays } from './useNoteDays'
 
 const s1 = SCHEDULES[0]
 const s3 = SCHEDULES[1]
 
-const day = (year: number, month: number, dayOfMonth: number) =>
-  new Date(year, month, dayOfMonth).getTime()
+const day = toDayKey
 
-const september = monthGrid(monthStartOf(day(2026, 8, 17)))
-const october = monthGrid(monthStartOf(day(2026, 9, 17)))
+const september = monthGrid(monthStartOf(day('2026-09-17')))
+const october = monthGrid(monthStartOf(day('2026-10-17')))
 
-const gridBounds = (grid: number[][]) => ({ from: grid[0][0], to: grid.at(-1)!.at(-1)! })
+const gridBounds = (grid: DayKey[][]) => ({ from: grid[0][0], to: grid.at(-1)!.at(-1)! })
 
 interface Window {
   shortName: string
-  from: number
-  to: number
+  from: string
+  to: string
 }
 
 const windowOf = (url: string): Window => {
@@ -26,13 +26,13 @@ const windowOf = (url: string): Window => {
 
   return {
     shortName: parsed.pathname.split('/')[3],
-    from: new Date(parsed.searchParams.get('searchFrom')!).getTime(),
-    to: new Date(parsed.searchParams.get('searchTo')!).getTime(),
+    from: parsed.searchParams.get('searchFrom')!,
+    to: parsed.searchParams.get('searchTo')!,
   }
 }
 
 /** Answers like the API: one count per day in the window that has notes, days with none omitted. */
-function stubFetch(counted: Record<number, number> = { [day(2026, 8, 3)]: 2 }) {
+function stubFetch(counted: Record<string, number> = { '2026-09-03': 2 }) {
   const fetchMock = vi.fn(async (url: string) => {
     const { from, to } = windowOf(url)
 
@@ -41,9 +41,8 @@ function stubFetch(counted: Record<number, number> = { [day(2026, 8, 3)]: 2 }) {
       status: 200,
       json: async () =>
         Object.entries(counted)
-          .map(([dayStart, count]) => ({ dayStart: Number(dayStart), count }))
-          .filter((entry) => entry.dayStart >= from && entry.dayStart < to)
-          .map((entry) => ({ day: new Date(entry.dayStart).toISOString(), count: entry.count })),
+          .map(([value, count]) => ({ day: value, count }))
+          .filter((entry) => entry.day >= from && entry.day < to),
     } as Response
   })
   vi.stubGlobal('fetch', fetchMock)
@@ -79,7 +78,7 @@ const windows = (fetchMock: { mock: { calls: unknown[][] } }) =>
 
 interface ProbeProps {
   schedule: Schedule
-  grid: number[][]
+  grid: DayKey[][]
   enabled: boolean
 }
 
@@ -90,16 +89,16 @@ function Probe({ schedule, grid, enabled }: ProbeProps) {
   return (
     <ul data-testid="grid" data-loading={isLoading}>
       {error && <li data-testid="error">{error}</li>}
-      {grid.flat().map((dayStart) => (
-        <li key={dayStart} data-testid={`day-${dayStart}`}>
-          {countFor(dayStart)}
+      {grid.flat().map((value) => (
+        <li key={value} data-testid={`day-${value}`}>
+          {countFor(value)}
         </li>
       ))}
     </ul>
   )
 }
 
-const cell = (dayStart: number) => screen.getByTestId(`day-${dayStart}`)
+const cell = (value: DayKey) => screen.getByTestId(`day-${value}`)
 
 describe('useNoteDays', () => {
   afterEach(() => {
@@ -120,10 +119,10 @@ describe('useNoteDays', () => {
 
     render(<Probe schedule={s1} grid={september} enabled />)
 
-    await waitFor(() => expect(cell(day(2026, 8, 3))).toHaveTextContent('2'))
+    await waitFor(() => expect(cell(day('2026-09-03'))).toHaveTextContent('2'))
     const { from, to } = gridBounds(september)
     expect(windows(fetchMock)).toEqual([
-      { shortName: 's1', from, to: new Date(to).setDate(new Date(to).getDate() + 1) },
+      { shortName: 's1', from, to: addDays(to, 1) },
     ])
   })
 
@@ -132,8 +131,8 @@ describe('useNoteDays', () => {
 
     render(<Probe schedule={s1} grid={september} enabled />)
 
-    await waitFor(() => expect(cell(day(2026, 8, 3))).toHaveTextContent('2'))
-    expect(cell(day(2026, 8, 4))).toHaveTextContent('0')
+    await waitFor(() => expect(cell(day('2026-09-03'))).toHaveTextContent('2'))
+    expect(cell(day('2026-09-04'))).toHaveTextContent('0')
   })
 
   it('reports loading until the grid lands', async () => {
@@ -145,17 +144,17 @@ describe('useNoteDays', () => {
   })
 
   it('requests only the new grid when the month moves, and nothing when it moves back', async () => {
-    const fetchMock = stubFetch({ [day(2026, 8, 3)]: 2, [day(2026, 9, 6)]: 1 })
+    const fetchMock = stubFetch({ '2026-09-03': 2, '2026-10-06': 1 })
     const { rerender } = render(<Probe schedule={s1} grid={september} enabled />)
 
-    await waitFor(() => expect(cell(day(2026, 8, 3))).toHaveTextContent('2'))
+    await waitFor(() => expect(cell(day('2026-09-03'))).toHaveTextContent('2'))
     rerender(<Probe schedule={s1} grid={october} enabled />)
-    await waitFor(() => expect(cell(day(2026, 9, 6))).toHaveTextContent('1'))
+    await waitFor(() => expect(cell(day('2026-10-06'))).toHaveTextContent('1'))
     expect(fetchMock).toHaveBeenCalledTimes(2)
 
     rerender(<Probe schedule={s1} grid={september} enabled />)
 
-    await waitFor(() => expect(cell(day(2026, 8, 3))).toHaveTextContent('2'))
+    await waitFor(() => expect(cell(day('2026-09-03'))).toHaveTextContent('2'))
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
@@ -163,7 +162,7 @@ describe('useNoteDays', () => {
     const fetchMock = stubFetch()
     const { rerender } = render(<Probe schedule={s1} grid={september} enabled />)
 
-    await waitFor(() => expect(cell(day(2026, 8, 3))).toHaveTextContent('2'))
+    await waitFor(() => expect(cell(day('2026-09-03'))).toHaveTextContent('2'))
     rerender(<Probe schedule={s3} grid={september} enabled />)
 
     await waitFor(() => expect(windows(fetchMock).map((asked) => asked.shortName)).toContain('s3'))
@@ -177,7 +176,7 @@ describe('useNoteDays', () => {
     rerender(<Probe schedule={s3} grid={september} enabled />)
 
     await waitFor(() => expect(held[0].signal.aborted).toBe(true))
-    expect(cell(day(2026, 8, 3))).toHaveTextContent('0')
+    expect(cell(day('2026-09-03'))).toHaveTextContent('0')
   })
 
   it('aborts on unmount and updates no state afterwards', async () => {
@@ -199,12 +198,12 @@ describe('useNoteDays', () => {
     const fetchMock = stubFetch()
     const { rerender } = render(<Probe schedule={s1} grid={september} enabled />)
 
-    await waitFor(() => expect(cell(day(2026, 8, 3))).toHaveTextContent('2'))
+    await waitFor(() => expect(cell(day('2026-09-03'))).toHaveTextContent('2'))
     fetchMock.mockRejectedValueOnce(new Error('offline'))
     rerender(<Probe schedule={s1} grid={october} enabled />)
 
     await waitFor(() => expect(screen.getByTestId('error')).toHaveTextContent(/calendar/i))
     rerender(<Probe schedule={s1} grid={september} enabled />)
-    expect(cell(day(2026, 8, 3))).toHaveTextContent('2')
+    expect(cell(day('2026-09-03'))).toHaveTextContent('2')
   })
 })

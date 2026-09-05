@@ -30,14 +30,14 @@ test('presses only the schedule chosen, and re-chunks every day', async ({
 })
 
 test('asks for the new short name once, not once per render', async ({ api, scheduleView }) => {
-  expect(api.notesWindows).toEqual(['s3 2026-08-24T00:00:00+01:00 2026-08-27T00:00:00+01:00'])
+  expect(api.notesWindows).toEqual(['s3 2026-08-24 2026-08-27'])
 
   await scheduleView.schedule('6h').click()
   await expect(scheduleView.day(FOCUS).rows).toHaveCount(4)
 
   expect(api.notesWindows).toEqual([
-    's3 2026-08-24T00:00:00+01:00 2026-08-27T00:00:00+01:00',
-    's6 2026-08-24T00:00:00+01:00 2026-08-27T00:00:00+01:00',
+    's3 2026-08-24 2026-08-27',
+    's6 2026-08-24 2026-08-27',
   ])
 })
 
@@ -72,6 +72,6 @@ test('cannot change schedule while a dialog is open — the picker is behind it'
 test('brings the new schedule’s own notes with it', async ({ scheduleView }) => {
   await scheduleView.schedule('6h').click()
 
-  await expect(scheduleView.day(FOCUS).note('09:00 Six-hourly: the long block.')).toBeVisible()
-  await expect(scheduleView.day(FOCUS).note('19:30 Stand-up')).toHaveCount(0)
+  await expect(scheduleView.day(FOCUS).noteText('Six-hourly: the long block.')).toBeVisible()
+  await expect(scheduleView.day(FOCUS).noteText('Stand-up')).toHaveCount(0)
 })

@@ -1,25 +1,25 @@
 import { useEffect, useRef } from 'react'
-import { addDays } from '../domain/days'
-import type { Note, Period } from '../types'
+import type { DayKey, Period, SpanHours } from '../types'
 import DaySection from './DaySection'
 
-/** One rendered day: its local midnight, its finished periods, and whether its notes have landed. */
+/** One rendered day: its day key, its finished periods, and whether its notes have landed. */
 export interface DayView {
-  dayStart: number
+  day: DayKey
   periods: Period[]
   isLoading: boolean
 }
 
 interface ScheduleViewProps {
   days: DayView[]
+  spanHours: SpanHours
   /** Injected so tests are deterministic — never read the clock inside the component. */
   now: Date
   /** The day the app is pointing at; scrolled to when it moves, never on mount. */
-  focusDayStart: number
-  selectedPeriod: Period | undefined
-  onSelect: (period: Period) => void
-  onTakeNote: (period: Period) => void
-  onOpenNote: (period: Period, note: Note) => void
+  focusDay: DayKey
+  /** Which period of the focus day is selected; the other two days show no selection. */
+  selectedOrdinal: number
+  onSelect: (day: DayKey, period: Period) => void
+  onOpenNote: (day: DayKey, period: Period) => void
   onOpenCalendar: () => void
   onGoToToday: () => void
 }
@@ -30,27 +30,27 @@ interface ScheduleViewProps {
  */
 function ScheduleView({
   days,
+  spanHours,
   now,
-  focusDayStart,
-  selectedPeriod,
+  focusDay,
+  selectedOrdinal,
   onSelect,
-  onTakeNote,
   onOpenNote,
   onOpenCalendar,
   onGoToToday,
 }: ScheduleViewProps) {
-  const sections = useRef(new Map<number, HTMLElement>())
-  const previousFocus = useRef(focusDayStart)
+  const sections = useRef(new Map<DayKey, HTMLElement>())
+  const previousFocus = useRef(focusDay)
 
   // On a change only: the mount scroll belongs to the selected row, inside its day.
   useEffect(() => {
-    if (previousFocus.current === focusDayStart) {
+    if (previousFocus.current === focusDay) {
       return
     }
 
-    previousFocus.current = focusDayStart
-    sections.current.get(focusDayStart)?.scrollIntoView?.({ block: 'start' })
-  }, [focusDayStart])
+    previousFocus.current = focusDay
+    sections.current.get(focusDay)?.scrollIntoView?.({ block: 'start' })
+  }, [focusDay])
 
   return (
     <div className="schedule">
@@ -65,33 +65,26 @@ function ScheduleView({
       </div>
 
       <div className="schedule-view" data-testid="schedule-scroll">
-        {days.map((day) => {
-          const start = new Date(day.dayStart)
-          const selectedStart = selectedPeriod?.start.getTime() ?? -1
-          const holdsSelection =
-            selectedStart >= day.dayStart && selectedStart < addDays(day.dayStart, 1)
-
-          return (
-            <DaySection
-              key={day.dayStart}
-              ref={(element) => {
-                if (element) {
-                  sections.current.set(day.dayStart, element)
-                } else {
-                  sections.current.delete(day.dayStart)
-                }
-              }}
-              day={start}
-              periods={day.periods}
-              now={now}
-              isLoading={day.isLoading}
-              selectedPeriod={holdsSelection ? selectedPeriod : undefined}
-              onSelect={onSelect}
-              onTakeNote={onTakeNote}
-              onOpenNote={onOpenNote}
-            />
-          )
-        })}
+        {days.map((day) => (
+          <DaySection
+            key={day.day}
+            ref={(element) => {
+              if (element) {
+                sections.current.set(day.day, element)
+              } else {
+                sections.current.delete(day.day)
+              }
+            }}
+            day={day.day}
+            periods={day.periods}
+            spanHours={spanHours}
+            now={now}
+            isLoading={day.isLoading}
+            selectedOrdinal={day.day === focusDay ? selectedOrdinal : null}
+            onSelect={(period) => onSelect(day.day, period)}
+            onOpenNote={(period) => onOpenNote(day.day, period)}
+          />
+        ))}
       </div>
     </div>
   )

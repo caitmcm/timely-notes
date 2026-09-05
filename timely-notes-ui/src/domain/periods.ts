@@ -1,76 +1,72 @@
-import type { Note, Period, SpanHours } from '../types'
+import { dayKeyOf } from './days'
+import type { DayKey, Note, Period, SpanHours } from '../types'
 
 const HOURS_IN_DAY = 24
 
-function startOfDay(day: Date): Date {
-  return new Date(day.getFullYear(), day.getMonth(), day.getDate())
-}
+const pad = (value: number) => String(value).padStart(2, '0')
 
-/**
- * Splits the local day containing `day` into `24 / spanHours` periods, midnight to midnight. Built
- * from local clock fields rather than millisecond arithmetic, so a DST day still reads that way.
- * Notes are bucketed separately by `assignNotes`.
- */
-export function buildPeriods(day: Date, spanHours: SpanHours): Period[] {
-  const midnight = startOfDay(day)
-  const boundary = (hour: number) =>
-    new Date(midnight.getFullYear(), midnight.getMonth(), midnight.getDate(), hour)
-
+/** The `24 / spanHours` blocks of any day, numbered from 1. A period carries no date and no time. */
+export function buildPeriods(spanHours: SpanHours): Period[] {
   return Array.from({ length: HOURS_IN_DAY / spanHours }, (_, index) => ({
-    start: boundary(index * spanHours),
-    end: boundary((index + 1) * spanHours),
-    notes: [],
+    ordinal: index + 1,
+    note: null,
   }))
 }
 
-/** Half-open: `start <= now < end`. */
-export function isCurrentPeriod(period: Period, now: Date): boolean {
-  return period.start.getTime() <= now.getTime() && now.getTime() < period.end.getTime()
+/** Which period of its own day the instant falls in: 1 at 00:00, `24 / spanHours` at 23:59. */
+export function ordinalOf(at: Date, spanHours: SpanHours): number {
+  return Math.floor(at.getHours() / spanHours) + 1
 }
 
-/** `undefined` when `now` is outside the day. */
-export function findCurrentPeriod(periods: Period[], now: Date): Period | undefined {
-  return periods.find((period) => isCurrentPeriod(period, now))
+export function isCurrentPeriod(
+  period: Period,
+  day: DayKey,
+  now: Date,
+  spanHours: SpanHours,
+): boolean {
+  return day === dayKeyOf(now) && period.ordinal === ordinalOf(now, spanHours)
+}
+
+/** `undefined` when `now` is not on `day`. */
+export function findCurrentPeriod(
+  periods: Period[],
+  day: DayKey,
+  now: Date,
+  spanHours: SpanHours,
+): Period | undefined {
+  return periods.find((period) => isCurrentPeriod(period, day, now, spanHours))
 }
 
 /**
- * Buckets each note into the period containing its `occursAt` — never `createdAt` — oldest first.
- * Pure: returns new `Period` objects. Sorts by instant rather than trusting the wire order, which
- * is newest first.
+ * Gives each period the one note addressed to it — a lookup on `(day, ordinal)`, not a search.
+ * Notes for another day are ignored, and a duplicated ordinal degrades to the last one rather than
+ * throwing: the type holds one note, so there is nowhere for a second to go.
  */
-export function assignNotes(periods: Period[], notes: Note[]): Period[] {
-  const ascending = [...notes].sort((a, b) => a.occursAt.getTime() - b.occursAt.getTime())
+export function assignNotes(periods: Period[], day: DayKey, notes: Note[]): Period[] {
+  const byOrdinal = new Map<number, Note>()
 
-  return periods.map((period) => ({
-    ...period,
-    notes: ascending.filter((note) => isCurrentPeriod(period, note.occursAt)),
-  }))
+  for (const note of notes) {
+    if (note.day === day) {
+      byOrdinal.set(note.ordinal, note)
+    }
+  }
+
+  return periods.map((period) => ({ ...period, note: byOrdinal.get(period.ordinal) ?? null }))
 }
 
 /** e.g. `18:00`. */
-export function formatTimeOfDay(at: Date): string {
-  return `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`
+export function formatPeriodStart(period: Period, spanHours: SpanHours): string {
+  return `${pad((period.ordinal - 1) * spanHours)}:00`
 }
 
-export function formatPeriodStart(period: Period): string {
-  return formatTimeOfDay(period.start)
-}
+/** e.g. `18:00 – 21:00`; the last period of the day ends at `00:00`. */
+export function formatPeriodLabel(period: Period, spanHours: SpanHours): string {
+  const end = (period.ordinal * spanHours) % HOURS_IN_DAY
 
-/** e.g. `18:00 – 21:00`. */
-export function formatPeriodLabel(period: Period): string {
-  return `${formatTimeOfDay(period.start)} – ${formatTimeOfDay(period.end)}`
+  return `${formatPeriodStart(period, spanHours)} – ${pad(end)}:00`
 }
 
 /** e.g. `25/08/2026`. */
-export function formatDayHeading(day: Date): string {
-  const date = String(day.getDate()).padStart(2, '0')
-  const month = String(day.getMonth() + 1).padStart(2, '0')
-
-  return `${date}/${month}/${day.getFullYear()}`
-}
-
-export function nextDay(day: Date): Date {
-  const midnight = startOfDay(day)
-
-  return new Date(midnight.getFullYear(), midnight.getMonth(), midnight.getDate() + 1)
+export function formatDayHeading(day: DayKey): string {
+  return `${day.slice(8)}/${day.slice(5, 7)}/${day.slice(0, 4)}`
 }

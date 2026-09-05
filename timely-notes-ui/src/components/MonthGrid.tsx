@@ -1,24 +1,25 @@
-import { isInMonth } from '../domain/months'
+import { dayOfMonth, isInMonth } from '../domain/months'
+import type { DayKey } from '../types'
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 interface MonthGridProps {
-  /** Whole weeks of local day starts, Monday first — built by `App` from `monthGrid`. */
-  weeks: number[][]
+  /** Whole weeks, Monday first — built by `App` from `monthGrid`. */
+  weeks: DayKey[][]
   /** The month on show; the days either side of it are dimmed but still pickable. */
-  monthStart: number
-  currentDayStart: number
-  focusDayStart: number
-  countFor: (dayStart: number) => number
-  onPickDay: (dayStart: number) => void
+  monthStart: DayKey
+  currentDay: DayKey
+  focusDay: DayKey
+  countFor: (day: DayKey) => number
+  onPickDay: (day: DayKey) => void
 }
 
 /** The month as a grid of day numbers, marked where the Schedule has notes. */
 function MonthGrid({
   weeks,
   monthStart,
-  currentDayStart,
-  focusDayStart,
+  currentDay,
+  focusDay,
   countFor,
   onPickDay,
 }: MonthGridProps) {
@@ -33,24 +34,25 @@ function MonthGrid({
       </div>
 
       <div className="month-grid__days">
-        {weeks.flat().map((dayStart) => {
-          const count = countFor(dayStart)
-          const dayOfMonth = new Date(dayStart).getDate()
-          const label = count > 0 ? `${dayOfMonth}, ${count} note${count === 1 ? '' : 's'}` : `${dayOfMonth}`
+        {weeks.flat().map((day) => {
+          const count = countFor(day)
+          const date = dayOfMonth(day)
+          const label =
+            count > 0 ? `${date}, ${count} note${count === 1 ? '' : 's'}` : `${date}`
 
           return (
             <button
-              key={dayStart}
+              key={day}
               type="button"
               className="month-grid__day"
-              data-day={dayStart}
-              data-outside={!isInMonth(dayStart, monthStart) || undefined}
+              data-day={day}
+              data-outside={!isInMonth(day, monthStart) || undefined}
               aria-label={label}
-              aria-current={dayStart === currentDayStart ? 'date' : undefined}
-              aria-pressed={dayStart === focusDayStart}
-              onClick={() => onPickDay(dayStart)}
+              aria-current={day === currentDay ? 'date' : undefined}
+              aria-pressed={day === focusDay}
+              onClick={() => onPickDay(day)}
             >
-              {dayOfMonth}
+              {date}
               {count > 0 && <span className="month-grid__marker" aria-hidden="true" />}
             </button>
           )

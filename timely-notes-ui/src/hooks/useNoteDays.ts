@@ -1,34 +1,33 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getNoteDaysBySchedule } from '../api/notesApi'
 import { addDays } from '../domain/days'
-import type { Schedule, ScheduleShortName } from '../types'
+import type { DayKey, Schedule, ScheduleShortName } from '../types'
 
-const NO_COUNTS: ReadonlyMap<number, number> = new Map()
+const NO_COUNTS: ReadonlyMap<DayKey, number> = new Map()
 
-/** Counts by local day start, plus the grids already answered, tagged with their Schedule. */
+/** Counts by day, plus the grids already answered, tagged with their Schedule. */
 interface Cache {
   shortName: ScheduleShortName
-  days: ReadonlyMap<number, number>
+  days: ReadonlyMap<DayKey, number>
   grids: ReadonlySet<string>
 }
 
 export interface NoteDays {
-  countFor: (dayStart: number) => number
+  countFor: (day: DayKey) => number
   isLoading: boolean
   error: string | null
 }
 
-const gridKey = (gridFrom: number, gridTo: number) => `${gridFrom}:${gridTo}`
+const gridKey = (gridFrom: DayKey, gridTo: DayKey) => `${gridFrom}:${gridTo}`
 
 /**
  * The calendar's markers: one request per grid shown, kept for as long as the Schedule does not
- * change, and none at all while `enabled` is false. `gridFrom`/`gridTo` are day starts, inclusive
- * both ends.
+ * change, and none at all while `enabled` is false. `gridFrom`/`gridTo` are inclusive both ends.
  */
 export function useNoteDays(
   schedule: Schedule,
-  gridFrom: number,
-  gridTo: number,
+  gridFrom: DayKey,
+  gridTo: DayKey,
   enabled: boolean,
 ): NoteDays {
   const [cache, setCache] = useState<Cache>({
@@ -66,7 +65,7 @@ export function useNoteDays(
 
     requested.current.add(key)
 
-    getNoteDaysBySchedule(shortName, new Date(gridFrom), new Date(addDays(gridTo, 1)), inFlight)
+    getNoteDaysBySchedule(shortName, gridFrom, addDays(gridTo, 1), inFlight)
       .then((days) => {
         if (current.current !== shortName) {
           return
@@ -79,7 +78,7 @@ export function useNoteDays(
             shortName,
             days: new Map([
               ...(kept?.days ?? NO_COUNTS),
-              ...days.map((day) => [day.dayStart, day.count] as const),
+              ...days.map((day) => [day.day, day.count] as const),
             ]),
             grids: new Set([...(kept?.grids ?? []), key]),
           }
@@ -100,7 +99,7 @@ export function useNoteDays(
   const held = cache.shortName === schedule.shortName ? cache : null
   const days = held?.days ?? NO_COUNTS
 
-  const countFor = useCallback((dayStart: number) => days.get(dayStart) ?? 0, [days])
+  const countFor = useCallback((day: DayKey) => days.get(day) ?? 0, [days])
   const isLoading = enabled && !held?.grids.has(gridKey(gridFrom, gridTo))
   const error = failure?.shortName === schedule.shortName ? failure.message : null
 

@@ -1,31 +1,32 @@
 import type { Ref } from 'react'
 import { noteExcerpt } from '../domain/notes'
-import { formatPeriodLabel, formatPeriodStart, formatTimeOfDay } from '../domain/periods'
-import type { Note, Period } from '../types'
+import { formatPeriodLabel, formatPeriodStart } from '../domain/periods'
+import type { Period, SpanHours } from '../types'
 
 interface PeriodRowProps {
   period: Period
+  spanHours: SpanHours
   /** Whether the clock is inside this period, not whether the user picked it. */
   isCurrent: boolean
   /** Drives the highlight and the Note button. */
   isSelected: boolean
   onSelect: (period: Period) => void
-  onTakeNote: (period: Period) => void
-  onOpenNote: (period: Period, note: Note) => void
+  onOpenNote: (period: Period) => void
   /** Set on the selected row so the view can scroll it into sight (React 19 ref-as-prop). */
   ref?: Ref<HTMLLIElement>
 }
 
 /**
- * One block of the day. The whole row selects, so the nested buttons stop the click bubbling; the
- * row carries its own `aria-label` so those buttons stay out of its accessible name.
+ * One block of the day, holding at most one note. The whole row selects, so the nested button stops
+ * the click bubbling; the row carries its own `aria-label` so that button stays out of its
+ * accessible name. The excerpt is text, never a second way in.
  */
 function PeriodRow({
   period,
+  spanHours,
   isCurrent,
   isSelected,
   onSelect,
-  onTakeNote,
   onOpenNote,
   ref,
 }: PeriodRowProps) {
@@ -35,7 +36,7 @@ function PeriodRow({
     <li
       ref={ref}
       role="option"
-      aria-label={formatPeriodLabel(period)}
+      aria-label={formatPeriodLabel(period, spanHours)}
       aria-selected={isSelected}
       aria-current={isCurrent ? 'time' : undefined}
       className={`period-row${isSelected ? ' period-row--selected' : ''}`}
@@ -49,33 +50,20 @@ function PeriodRow({
       }}
     >
       <span className="period-row__time" aria-hidden="true">
-        {formatPeriodStart(period)}
+        {formatPeriodStart(period, spanHours)}
       </span>
 
-      <span className="period-row__notes">
-        {period.notes.map((note) => (
-          <button
-            key={note.id}
-            type="button"
-            className="period-row__note"
-            onClick={(event) => {
-              event.stopPropagation()
-              onOpenNote(period, note)
-            }}
-          >
-            <span className="period-row__note-time">{formatTimeOfDay(note.occursAt)}</span>{' '}
-            {noteExcerpt(note.content)}
-          </button>
-        ))}
+      <span className="period-row__note">
+        {period.note && noteExcerpt(period.note.content)}
       </span>
 
       {isSelected && (
         <button
           type="button"
-          className="period-row__take-note"
+          className="period-row__open-note"
           onClick={(event) => {
             event.stopPropagation()
-            onTakeNote(period)
+            onOpenNote(period)
           }}
         >
           Note

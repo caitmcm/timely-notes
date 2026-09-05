@@ -1,27 +1,30 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { toDayKey } from './domain/days'
+import type { DayKey } from './types'
 import App from './App'
 
 /** The instant the mockup is drawn at. */
 const now = new Date(2026, 7, 25, 20, 20)
 
-const iso = (hour: number, minute = 0) => new Date(2026, 7, 25, hour, minute).toISOString()
+/** August 2026, the month the frozen clock sits in. */
+const august = (dayOfMonth: number) => toDayKey(`2026-08-${String(dayOfMonth).padStart(2, '0')}`)
 
-/** `createdAt` is a different day throughout: only `occursAt` decides where a note lands. */
+/** The audit stamps are a different day throughout: only the period places a note. */
 const writtenAt = new Date(2026, 7, 28, 9, 12).toISOString()
 
-const wireNote = (id: string, hour: number, content: string) => ({
-  id,
+const wireNote = (day: DayKey, periodOrdinal: number, content: string) => ({
+  day,
+  periodOrdinal,
   content,
-  occursAt: iso(hour),
   createdAt: writtenAt,
   modifiedAt: writtenAt,
 })
 
-/** Newest-first, as the API answers. */
+/** Newest-first, as the API answers: `s3`'s p6 is 15:00–18:00 and p4 is 09:00–12:00. */
 const s3Notes = [
-  wireNote('s3-afternoon', 15, 'Afternoon block: wired up FastEndpoints.'),
-  wireNote('s3-morning', 9, 'Morning block: drafted the TDD plan.'),
+  wireNote(august(25), 6, 'Afternoon block: wired up FastEndpoints.'),
+  wireNote(august(25), 4, 'Morning block: drafted the TDD plan.'),
 ]
 
 function stubFetch(byShortName: Record<string, unknown[]> = { s3: s3Notes }) {
@@ -44,11 +47,12 @@ const requests = (fetchMock: ReturnType<typeof stubFetch>) =>
 const requestedShortNames = (fetchMock: ReturnType<typeof stubFetch>) =>
   requests(fetchMock).map((url) => url.pathname.split('/')[3])
 
-const section = (day: Date) =>
-  document.querySelector(`[data-day="${day.getTime()}"]`) as HTMLElement
+const bounds = (url: URL) => [
+  url.searchParams.get('searchFrom')!,
+  url.searchParams.get('searchTo')!,
+]
 
-/** August 2026, the month the frozen clock sits in. */
-const august = (dayOfMonth: number) => new Date(2026, 7, dayOfMonth)
+const section = (day: DayKey) => document.querySelector(`[data-day="${day}"]`) as HTMLElement
 
 /** A period row on one particular day — the same slot exists on all three rendered days. */
 const row = (dayOfMonth: number, name: string) =>
@@ -82,37 +86,33 @@ describe('App', () => {
 
     await waitFor(() => expect(requests(fetchMock)).toHaveLength(1))
     expect(headings()).toEqual(['24/08/2026', '25/08/2026', '26/08/2026'])
-    const { searchParams } = requests(fetchMock)[0]
-    expect(new Date(searchParams.get('searchFrom')!)).toEqual(august(24))
-    expect(new Date(searchParams.get('searchTo')!)).toEqual(august(27))
+    expect(bounds(requests(fetchMock)[0])).toEqual(['2026-08-24', '2026-08-27'])
   })
 
   it('fetches once per schedule change, not once per render', async () => {
     const fetchMock = stubFetch({ s3: s3Notes, s6: [] })
     renderApp()
-    await screen.findByRole('button', { name: /Afternoon block/ })
+    await screen.findByText(/Afternoon block/)
 
     await userEvent.click(screen.getByRole('button', { name: '6h' }))
 
     await waitFor(() => expect(requestedShortNames(fetchMock)).toEqual(['s3', 's6']))
   })
 
-  it('places notes by occursAt even when they were written on another day', async () => {
+  it('places a note by its period, not by the day it was written on', async () => {
     stubFetch()
     renderApp()
 
-    await screen.findByRole('button', { name: /Morning block/ })
+    await screen.findByText(/Morning block/)
 
-    // Fixture createdAt is 28/08 09:12; the row must show the 09:00 slot on the 25th instead.
-    expect(row(25, '09:00 – 12:00')).toContainElement(
-      screen.getByRole('button', { name: /^09:00 Morning block/ }),
-    )
+    // The fixture's audit stamps are 28/08 09:12; the note belongs to p4 of the 25th.
+    expect(row(25, '09:00 – 12:00')).toHaveTextContent('Morning block')
   })
 
   it('refetches with the new short name when the schedule changes', async () => {
     const fetchMock = stubFetch({ s3: s3Notes, s6: [] })
     renderApp()
-    await screen.findByRole('button', { name: /Afternoon block/ })
+    await screen.findByText(/Afternoon block/)
 
     await userEvent.click(screen.getByRole('button', { name: '6h' }))
 
@@ -178,43 +178,59 @@ describe('App', () => {
     expect(screen.getByRole('textbox')).toHaveTextContent('')
   })
 
-  it('lists fetched notes against their periods, oldest-first', async () => {
+  it('shows each fetched note as text against its own period, and nothing else', async () => {
     stubFetch()
     renderApp()
 
-    await screen.findByRole('button', { name: /Morning block/ })
+    await screen.findByText(/Morning block/)
 
-    expect(row(25, '09:00 – 12:00')).toContainElement(
-      screen.getByRole('button', { name: /Morning block/ }),
-    )
-    expect(row(25, '15:00 – 18:00')).toContainElement(
-      screen.getByRole('button', { name: /Afternoon block/ }),
-    )
+    expect(row(25, '09:00 – 12:00')).toHaveTextContent('Morning block')
+    expect(row(25, '15:00 – 18:00')).toHaveTextContent('Afternoon block')
+    // The selected row's own button is the only one in the whole view.
+    expect(screen.getAllByRole('button', { name: 'Note' })).toHaveLength(1)
   })
 
-  it('opens an existing note with its content loaded', async () => {
+  // The defect this feature closes: the row said one thing and its button addressed another.
+  it('opens the selected period’s own note, with its content', async () => {
     stubFetch()
     renderApp()
+    await screen.findByText(/Morning block/)
 
-    await userEvent.click(await screen.findByRole('button', { name: /Morning block/ }))
+    await userEvent.click(row(25, '09:00 – 12:00'))
+    await userEvent.click(screen.getByRole('button', { name: 'Note' }))
 
     expect(screen.getByRole('heading', { name: '09:00 – 12:00' })).toBeInTheDocument()
     expect(screen.getByRole('textbox')).toHaveTextContent('Morning block: drafted the TDD plan.')
   })
 
-  it('opens blank when taking a note straight after closing an existing one', async () => {
+  it('leaves the row holding one entry after its note has been opened', async () => {
     stubFetch()
     renderApp()
-    await userEvent.click(await screen.findByRole('button', { name: /Morning block/ }))
+    await screen.findByText(/Morning block/)
+
+    await userEvent.click(row(25, '09:00 – 12:00'))
+    await userEvent.click(screen.getByRole('button', { name: 'Note' }))
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
 
+    expect(within(row(25, '09:00 – 12:00')).getAllByText(/Morning block/)).toHaveLength(1)
+  })
+
+  it('opens blank on an empty period straight after closing one that held a note', async () => {
+    stubFetch()
+    renderApp()
+    await screen.findByText(/Morning block/)
+    await userEvent.click(row(25, '09:00 – 12:00'))
+    await userEvent.click(screen.getByRole('button', { name: 'Note' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    await userEvent.click(row(25, '18:00 – 21:00'))
     await userEvent.click(screen.getByRole('button', { name: 'Note' }))
 
     expect(screen.getByRole('heading', { name: '18:00 – 21:00' })).toBeInTheDocument()
     expect(screen.getByRole('textbox')).toHaveTextContent('')
   })
 
-  it('logs the markdown and closes when an note is saved', async () => {
+  it('logs the markdown and the address, then closes, when a note is saved', async () => {
     stubFetch()
     const log = vi.spyOn(console, 'log').mockImplementation(() => {})
     renderApp()
@@ -223,7 +239,7 @@ describe('App', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
 
-    expect(log).toHaveBeenCalled()
+    expect(log).toHaveBeenCalledWith(expect.anything(), '2026-08-25', 7)
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     log.mockRestore()
   })
@@ -246,7 +262,7 @@ describe('App', () => {
  * moving, which the frozen-prop suite above deliberately cannot see.
  */
 describe('App — live clock', () => {
-  const dayBefore = (hour: number, minute = 0) => new Date(2026, 7, 25, hour, minute)
+  const onThe25th = (hour: number, minute = 0) => new Date(2026, 7, 25, hour, minute)
 
   beforeEach(() => {
     vi.useFakeTimers()
@@ -285,11 +301,11 @@ describe('App — live clock', () => {
   const currentName = () =>
     screen
       .getAllByRole('option')
-      .find((row) => row.getAttribute('aria-current') === 'time')
+      .find((option) => option.getAttribute('aria-current') === 'time')
       ?.getAttribute('aria-label')
 
   it('does not refetch as the clock ticks', async () => {
-    const fetchMock = await mountAt(dayBefore(20, 20))
+    const fetchMock = await mountAt(onThe25th(20, 20))
 
     await advance(10 * 60_000)
 
@@ -297,7 +313,7 @@ describe('App — live clock', () => {
   })
 
   it('moves the current-period marker across a period boundary without a reload', async () => {
-    await mountAt(dayBefore(20, 59))
+    await mountAt(onThe25th(20, 59))
     expect(currentName()).toBe('18:00 – 21:00')
 
     await advance(2 * 60_000)
@@ -306,7 +322,7 @@ describe('App — live clock', () => {
   })
 
   it('carries the selection along with the marker while the view is untouched', async () => {
-    await mountAt(dayBefore(20, 59))
+    await mountAt(onThe25th(20, 59))
     expect(selectedName()).toBe('18:00 – 21:00')
 
     await advance(2 * 60_000)
@@ -318,7 +334,7 @@ describe('App — live clock', () => {
     // jsdom has no scrollIntoView at all, so the mount-only effect needs one to count.
     const scrollIntoView = vi.fn()
     Element.prototype.scrollIntoView = scrollIntoView
-    await mountAt(dayBefore(20, 59))
+    await mountAt(onThe25th(20, 59))
     const onMount = scrollIntoView.mock.calls.length
     expect(onMount).toBe(1)
 
@@ -331,7 +347,7 @@ describe('App — live clock', () => {
   // The window moves one day on, and days already held are kept, so a rollover asks only for the
   // one day it has never seen.
   it('follows the clock over midnight: the window moves on, one more fetch, one new day', async () => {
-    const fetchMock = await mountAt(dayBefore(23, 59))
+    const fetchMock = await mountAt(onThe25th(23, 59))
     expect(headings()).toEqual(['24/08/2026', '25/08/2026', '26/08/2026'])
 
     await advance(2 * 60_000)
@@ -339,13 +355,11 @@ describe('App — live clock', () => {
     expect(headings()).toEqual(['25/08/2026', '26/08/2026', '27/08/2026'])
     expect(selectedName()).toBe('00:00 – 03:00')
     expect(requests(fetchMock)).toHaveLength(2)
-    const { searchParams } = requests(fetchMock)[1]
-    expect(new Date(searchParams.get('searchFrom')!)).toEqual(new Date(2026, 7, 27))
-    expect(new Date(searchParams.get('searchTo')!)).toEqual(new Date(2026, 7, 28))
+    expect(bounds(requests(fetchMock)[1])).toEqual(['2026-08-27', '2026-08-28'])
   })
 
   it('stays put over midnight once the user has selected a row', async () => {
-    const fetchMock = await mountAt(dayBefore(23, 59))
+    const fetchMock = await mountAt(onThe25th(23, 59))
     await click(row(25, '06:00 – 09:00'))
 
     await advance(2 * 60_000)
@@ -356,13 +370,15 @@ describe('App — live clock', () => {
     // The new day is one of the three on show, so the marker moves on to it while the view stays.
     expect(currentName()).toBe('00:00 – 03:00')
     expect(section(august(26))).toContainElement(
-      screen.getAllByRole('option').find((option) => option.getAttribute('aria-current') === 'time')!,
+      screen
+        .getAllByRole('option')
+        .find((option) => option.getAttribute('aria-current') === 'time')!,
     )
     expect(requests(fetchMock)).toHaveLength(1)
   })
 
   it('leaves an open dialog alone over midnight', async () => {
-    await mountAt(dayBefore(23, 59))
+    await mountAt(onThe25th(23, 59))
     await click(screen.getByRole('button', { name: 'Note' }))
     expect(screen.getByRole('heading', { name: '21:00 – 00:00' })).toBeInTheDocument()
 
@@ -375,7 +391,7 @@ describe('App — live clock', () => {
 
   // The control itself is always there; only the notice explaining it comes and goes.
   it('notices the rollover only under a committed view', async () => {
-    await mountAt(dayBefore(23, 59))
+    await mountAt(onThe25th(23, 59))
     expect(rolloverNotice()).not.toBeInTheDocument()
 
     await click(row(25, '06:00 – 09:00'))
@@ -386,7 +402,7 @@ describe('App — live clock', () => {
   })
 
   it('shows no notice when the view followed the clock by itself', async () => {
-    await mountAt(dayBefore(23, 59))
+    await mountAt(onThe25th(23, 59))
 
     await advance(2 * 60_000)
 
@@ -394,7 +410,7 @@ describe('App — live clock', () => {
   })
 
   it('moves the view to the current day when Go to today is pressed', async () => {
-    const fetchMock = await mountAt(dayBefore(23, 59))
+    const fetchMock = await mountAt(onThe25th(23, 59))
     await click(row(25, '06:00 – 09:00'))
     await advance(2 * 60_000)
 
@@ -408,7 +424,7 @@ describe('App — live clock', () => {
   })
 
   it('leaves the view alone when Go to today is pressed on the current day', async () => {
-    const fetchMock = await mountAt(dayBefore(20, 20))
+    const fetchMock = await mountAt(onThe25th(20, 20))
 
     await click(goToToday())
     await act(async () => {})
@@ -418,28 +434,28 @@ describe('App — live clock', () => {
     expect(requests(fetchMock)).toHaveLength(1)
   })
 
-  it('stamps a new note with the instant the dialog opened, on the day that is current then', async () => {
+  it('addresses a new note by the day that is current when the dialog opens', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {})
-    await mountAt(dayBefore(23, 59))
+    await mountAt(onThe25th(23, 59))
     await advance(6 * 60_000)
 
     await click(screen.getByRole('button', { name: 'Note' }))
     await advance(10 * 60_000)
     await click(screen.getByRole('button', { name: 'Save' }))
 
-    expect(log).toHaveBeenCalledWith(expect.anything(), new Date(2026, 7, 26, 0, 5))
+    expect(log).toHaveBeenCalledWith(expect.anything(), '2026-08-26', 1)
     log.mockRestore()
   })
 
-  it('stamps a note taken in a slot that is not the live one with that slot start', async () => {
+  it('addresses a note in a slot that is not the live one by that slot', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {})
-    await mountAt(dayBefore(20, 20))
+    await mountAt(onThe25th(20, 20))
     await click(row(25, '06:00 – 09:00'))
 
     await click(screen.getByRole('button', { name: 'Note' }))
     await click(screen.getByRole('button', { name: 'Save' }))
 
-    expect(log).toHaveBeenCalledWith(expect.anything(), new Date(2026, 7, 25, 6))
+    expect(log).toHaveBeenCalledWith(expect.anything(), '2026-08-25', 3)
     log.mockRestore()
   })
 })
@@ -453,28 +469,20 @@ describe('App — calendar navigation', () => {
   function stubApi(notes: ReturnType<typeof wireNote>[] = s3Notes) {
     const fetchMock = vi.fn(async (url: string) => {
       const parsed = new URL(url, 'http://localhost')
-      const from = new Date(parsed.searchParams.get('searchFrom')!).getTime()
-      const to = new Date(parsed.searchParams.get('searchTo')!).getTime()
-      const inWindow = notes.filter((note) => {
-        const at = new Date(note.occursAt).getTime()
-
-        return at >= from && at < to
-      })
+      const [from, to] = bounds(parsed)
+      const inWindow = notes.filter((note) => note.day >= from && note.day < to)
 
       if (parsed.pathname.endsWith('/note-days')) {
-        const counts = new Map<number, number>()
+        const counts = new Map<string, number>()
 
         for (const note of inWindow) {
-          const at = new Date(note.occursAt)
-          const day = new Date(at.getFullYear(), at.getMonth(), at.getDate()).getTime()
-          counts.set(day, (counts.get(day) ?? 0) + 1)
+          counts.set(note.day, (counts.get(note.day) ?? 0) + 1)
         }
 
         return {
           ok: true,
           status: 200,
-          json: async () =>
-            [...counts].map(([day, count]) => ({ day: new Date(day).toISOString(), count })),
+          json: async () => [...counts].map(([day, count]) => ({ day, count })),
         } as Response
       }
 
@@ -491,13 +499,7 @@ describe('App — calendar navigation', () => {
   const countRequests = (fetchMock: ReturnType<typeof stubApi>) =>
     requests(fetchMock).filter((url) => url.pathname.endsWith('/note-days'))
 
-  const windowOf = (url: URL) => [
-    new Date(url.searchParams.get('searchFrom')!),
-    new Date(url.searchParams.get('searchTo')!),
-  ]
-
-  const openCalendar = async () =>
-    userEvent.click(screen.getByRole('button', { name: 'Calendar' }))
+  const openCalendar = async () => userEvent.click(screen.getByRole('button', { name: 'Calendar' }))
 
   afterEach(() => {
     vi.unstubAllGlobals()
@@ -549,10 +551,7 @@ describe('App — calendar navigation', () => {
 
     expect(headings()).toEqual(['14/07/2026', '15/07/2026', '16/07/2026'])
     await waitFor(() => expect(noteRequests(fetchMock)).toHaveLength(before + 1))
-    expect(windowOf(noteRequests(fetchMock)[before])).toEqual([
-      new Date(2026, 6, 14),
-      new Date(2026, 6, 17),
-    ])
+    expect(bounds(noteRequests(fetchMock)[before])).toEqual(['2026-07-14', '2026-07-17'])
   })
 
   it('selects the first period of a day picked in the past', async () => {
@@ -566,7 +565,7 @@ describe('App — calendar navigation', () => {
 
     const selected = screen.getByRole('option', { selected: true })
     expect(selected).toHaveAccessibleName('00:00 – 03:00')
-    expect(section(new Date(2026, 6, 15))).toContainElement(selected)
+    expect(section(toDayKey('2026-07-15'))).toContainElement(selected)
   })
 
   it('notices a calendar jump, and closes the calendar', async () => {
@@ -637,9 +636,9 @@ describe('App — calendar navigation', () => {
     await userEvent.click(screen.getByRole('button', { name: '15' }))
 
     await waitFor(() => expect(noteRequests(fetchMock)).toHaveLength(2))
-    expect(noteRequests(fetchMock).map(windowOf)).toEqual([
-      [august(24), august(27)],
-      [new Date(2026, 6, 14), new Date(2026, 6, 17)],
+    expect(noteRequests(fetchMock).map(bounds)).toEqual([
+      ['2026-08-24', '2026-08-27'],
+      ['2026-07-14', '2026-07-17'],
     ])
   })
 
@@ -687,15 +686,12 @@ describe('App — calendar navigation', () => {
     expect(headings()).toEqual(['24/08/2026', '25/08/2026', '26/08/2026'])
   })
 
-  it('puts a note on the day it occurs on, not on the day in view', async () => {
-    const tomorrowsNote = {
-      ...wireNote('s3-tomorrow', 9, 'Tomorrow: the create endpoint.'),
-      occursAt: new Date(2026, 7, 26, 9).toISOString(),
-    }
+  it('puts a note on the day it is addressed to, not on the day in view', async () => {
+    const tomorrowsNote = wireNote(august(26), 4, 'Tomorrow: the create endpoint.')
     stubApi([...s3Notes, tomorrowsNote])
     renderApp()
 
-    const tomorrow = await screen.findByRole('button', { name: /Tomorrow: the create endpoint/ })
+    const tomorrow = await screen.findByText(/Tomorrow: the create endpoint/)
 
     expect(section(august(26))).toContainElement(tomorrow)
     expect(section(august(25))).not.toContainElement(tomorrow)

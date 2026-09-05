@@ -187,8 +187,9 @@ export class DayScope {
     return this.root.getByRole('button', { name: 'Note', exact: true })
   }
 
-  note(label: string): Locator {
-    return this.root.getByRole('button', { name: label })
+  /** A period's note reads as text, not as a control: there is only ever one way into a row. */
+  noteText(excerpt: string | RegExp): Locator {
+    return this.root.locator('.period-row__note').filter({ hasText: excerpt })
   }
 
   /** The `Loading notes…` marker in the day heading. */

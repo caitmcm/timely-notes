@@ -1,4 +1,3 @@
-import type { Note, Period } from '../types'
 import {
   assignNotes,
   buildPeriods,
@@ -7,19 +6,20 @@ import {
   formatPeriodLabel,
   formatPeriodStart,
   isCurrentPeriod,
-  nextDay,
+  ordinalOf,
 } from './periods'
+import { toDayKey } from './days'
+import type { Note, SpanHours } from '../types'
 
-/** The date the mockup is drawn against. */
-const day = new Date(2026, 7, 25)
+const day = toDayKey
 
-/** `createdAt` is deliberately a different day — placement must ignore it. */
-const note = (id: string, occursAt: Date, content = 'body'): Note => ({
-  id,
+const note = (dayValue: string, ordinal: number, content = 'Note'): Note => ({
+  day: day(dayValue),
+  ordinal,
   content,
-  occursAt,
-  createdAt: new Date(2026, 7, 28, 9, 12),
-  modifiedAt: new Date(2026, 7, 28, 9, 12),
+  // Deliberately another day: an audit stamp never places a note.
+  createdAt: new Date(2020, 0, 1, 8),
+  modifiedAt: new Date(2020, 0, 1, 8),
 })
 
 describe('buildPeriods', () => {
@@ -27,195 +27,155 @@ describe('buildPeriods', () => {
     [1, 24],
     [3, 8],
     [6, 4],
-  ] as const)('splits the day into %ih periods, giving %i of them', (spanHours, expected) => {
-    expect(buildPeriods(day, spanHours)).toHaveLength(expected)
+  ])('splits the day into 24 / %i periods', (spanHours, count) => {
+    expect(buildPeriods(spanHours as SpanHours)).toHaveLength(count)
   })
 
-  it('starts the first period at local midnight', () => {
-    const [first] = buildPeriods(day, 3)
-
-    expect(first.start).toEqual(new Date(2026, 7, 25, 0, 0, 0, 0))
+  it('numbers them from 1, holding no note', () => {
+    expect(buildPeriods(6)).toEqual([
+      { ordinal: 1, note: null },
+      { ordinal: 2, note: null },
+      { ordinal: 3, note: null },
+      { ordinal: 4, note: null },
+    ])
   })
 
-  it('ends the last period at the next local midnight', () => {
-    const periods = buildPeriods(day, 3)
+  it('carries no date and no time at all', () => {
+    expect(Object.keys(buildPeriods(3)[0]).sort()).toEqual(['note', 'ordinal'])
+  })
+})
 
-    expect(periods[periods.length - 1].end).toEqual(new Date(2026, 7, 26, 0, 0, 0, 0))
+describe('ordinalOf', () => {
+  it.each([1, 3, 6])('is 1 at midnight and the count at 23:59 on s%i', (spanHours) => {
+    const span = spanHours as SpanHours
+
+    expect(ordinalOf(new Date(2026, 7, 25, 0, 0), span)).toBe(1)
+    expect(ordinalOf(new Date(2026, 7, 25, 23, 59), span)).toBe(24 / spanHours)
   })
 
-  it('leaves no gaps between periods', () => {
-    const periods = buildPeriods(day, 6)
-
-    periods.slice(1).forEach((period, index) => {
-      expect(period.start.getTime()).toBe(periods[index].end.getTime())
-    })
+  it('puts a boundary hour in the period it opens, not the one it closes', () => {
+    expect(ordinalOf(new Date(2026, 7, 25, 8, 59), 3)).toBe(3)
+    expect(ordinalOf(new Date(2026, 7, 25, 9, 0), 3)).toBe(4)
+    expect(ordinalOf(new Date(2026, 7, 25, 11, 59), 3)).toBe(4)
+    expect(ordinalOf(new Date(2026, 7, 25, 12, 0), 3)).toBe(5)
   })
 
-  it('gives every period an empty notes array', () => {
-    expect(buildPeriods(day, 3).every((period) => period.notes.length === 0)).toBe(true)
-  })
-
-  it('ignores the time of day on the date it is given', () => {
-    const [fromMidday] = buildPeriods(new Date(2026, 7, 25, 12, 34, 56), 3)
-
-    expect(fromMidday.start).toEqual(new Date(2026, 7, 25, 0, 0, 0, 0))
+  it('answers the fourth period for 09:30 on s3, the tenth on s1 and the second on s6', () => {
+    expect(ordinalOf(new Date(2026, 7, 25, 9, 30), 3)).toBe(4)
+    expect(ordinalOf(new Date(2026, 7, 25, 9, 30), 1)).toBe(10)
+    expect(ordinalOf(new Date(2026, 7, 25, 9, 30), 6)).toBe(2)
   })
 })
 
 describe('isCurrentPeriod', () => {
-  const period = buildPeriods(day, 3)[6] // 18:00 – 21:00
+  const periods = buildPeriods(3)
+  const now = new Date(2026, 7, 25, 20, 20)
 
-  it('is true for an instant inside the period', () => {
-    expect(isCurrentPeriod(period, new Date(2026, 7, 25, 20, 20))).toBe(true)
+  it('is true only for the period the clock is in, on the day the clock is on', () => {
+    expect(isCurrentPeriod(periods[6], day('2026-08-25'), now, 3)).toBe(true)
+    expect(isCurrentPeriod(periods[5], day('2026-08-25'), now, 3)).toBe(false)
   })
 
-  it('is true at the opening boundary', () => {
-    expect(isCurrentPeriod(period, new Date(2026, 7, 25, 18, 0))).toBe(true)
-  })
-
-  it('gives the closing boundary instant to the later period', () => {
-    expect(isCurrentPeriod(period, new Date(2026, 7, 25, 21, 0))).toBe(false)
-  })
-
-  it('is false for a time on another day', () => {
-    expect(isCurrentPeriod(period, new Date(2026, 7, 26, 19, 0))).toBe(false)
+  it('is false for the same period on another day', () => {
+    expect(isCurrentPeriod(periods[6], day('2026-08-26'), now, 3)).toBe(false)
   })
 })
 
 describe('findCurrentPeriod', () => {
-  it('returns the 18:00 – 21:00 period at 20:20 on the 3h schedule', () => {
-    const found = findCurrentPeriod(buildPeriods(day, 3), new Date(2026, 7, 25, 20, 20))
+  const now = new Date(2026, 7, 25, 20, 20)
 
-    expect(found?.start).toEqual(new Date(2026, 7, 25, 18, 0, 0, 0))
+  it('finds the one period holding the clock', () => {
+    expect(findCurrentPeriod(buildPeriods(3), day('2026-08-25'), now, 3)).toEqual({
+      ordinal: 7,
+      note: null,
+    })
   })
 
-  it('matches exactly one period', () => {
-    const now = new Date(2026, 7, 25, 20, 20)
-    const periods = buildPeriods(day, 1)
+  it('finds exactly one, whatever the span', () => {
+    const found = buildPeriods(1).filter((period) =>
+      isCurrentPeriod(period, day('2026-08-25'), now, 1),
+    )
 
-    expect(periods.filter((period) => isCurrentPeriod(period, now))).toHaveLength(1)
+    expect(found).toHaveLength(1)
   })
 
-  it('returns undefined when now falls on another day', () => {
-    expect(findCurrentPeriod(buildPeriods(day, 3), new Date(2026, 7, 26, 20, 20))).toBeUndefined()
+  it('finds nothing on another day', () => {
+    expect(findCurrentPeriod(buildPeriods(3), day('2026-08-26'), now, 3)).toBeUndefined()
   })
 })
 
 describe('assignNotes', () => {
-  it('buckets a note into the period containing its occursAt', () => {
-    const periods = assignNotes(buildPeriods(day, 3), [note('a', new Date(2026, 7, 25, 19, 30))])
+  const periods = buildPeriods(3)
+  const today = day('2026-08-25')
 
-    expect(periods[6].notes.map((n) => n.id)).toEqual(['a'])
-    expect(periods.flatMap((period) => period.notes)).toHaveLength(1)
+  it('gives a period the note addressed to its ordinal, and null to the rest', () => {
+    const assigned = assignNotes(periods, today, [note('2026-08-25', 4, 'Morning')])
+
+    expect(assigned[3].note?.content).toBe('Morning')
+    expect(assigned.filter((period) => period.note !== null)).toHaveLength(1)
   })
 
-  it('orders notes within a period oldest-first even when supplied newest-first', () => {
-    const newest = note('newest', new Date(2026, 7, 25, 20, 0))
-    const oldest = note('oldest', new Date(2026, 7, 25, 18, 30))
+  it('is a lookup on the ordinal, so 1 is the first period and the count is the last', () => {
+    const assigned = assignNotes(periods, today, [
+      note('2026-08-25', 1, 'First'),
+      note('2026-08-25', 8, 'Last'),
+    ])
 
-    const periods = assignNotes(buildPeriods(day, 3), [newest, oldest])
-
-    expect(periods[6].notes.map((n) => n.id)).toEqual(['oldest', 'newest'])
+    expect(assigned[0].note?.content).toBe('First')
+    expect(assigned.at(-1)?.note?.content).toBe('Last')
   })
 
-  it('does not mutate the periods it is given', () => {
-    const original = buildPeriods(day, 3)
+  it('ignores a note addressed to another day', () => {
+    const assigned = assignNotes(periods, today, [note('2026-08-26', 4)])
 
-    const assigned = assignNotes(original, [note('a', new Date(2026, 7, 25, 19, 30))])
-
-    expect(original[6].notes).toEqual([])
-    expect(assigned[6]).not.toBe(original[6])
+    expect(assigned.every((period) => period.note === null)).toBe(true)
   })
 
-  it('does not mutate the notes array it is given', () => {
-    const notes = [note('newest', new Date(2026, 7, 25, 20, 0)), note('oldest', new Date(2026, 7, 25, 18, 30))]
-
-    assignNotes(buildPeriods(day, 3), notes)
-
-    expect(notes.map((n) => n.id)).toEqual(['newest', 'oldest'])
+  it('ignores an ordinal outside the grid rather than throwing', () => {
+    expect(() => assignNotes(periods, today, [note('2026-08-25', 99)])).not.toThrow()
+    expect(assignNotes(periods, today, [note('2026-08-25', 99)])).toEqual(periods)
   })
 
-  it('places a note by occursAt, ignoring a createdAt in a different period', () => {
-    const written: Note = {
-      id: 'written-later',
-      content: 'body',
-      occursAt: new Date(2026, 7, 25, 19, 30),
-      createdAt: new Date(2026, 7, 25, 8, 0),
-      modifiedAt: new Date(2026, 7, 25, 8, 0),
-    }
+  // Unspellable through the API, but bad data should degrade rather than crash.
+  it('lets the last note win when two claim one period', () => {
+    const assigned = assignNotes(periods, today, [
+      note('2026-08-25', 4, 'First'),
+      note('2026-08-25', 4, 'Second'),
+    ])
 
-    const periods = assignNotes(buildPeriods(day, 3), [written])
-
-    expect(periods[6].notes.map((n) => n.id)).toEqual(['written-later'])
-    expect(periods[2].notes).toEqual([])
+    expect(assigned[3].note?.content).toBe('Second')
   })
 
-  it('orders within a period by occursAt, not createdAt', () => {
-    const later: Note = {
-      id: 'later-slot',
-      content: 'body',
-      occursAt: new Date(2026, 7, 25, 20, 0),
-      createdAt: new Date(2026, 7, 20, 9, 0),
-      modifiedAt: new Date(2026, 7, 20, 9, 0),
-    }
-    const earlier: Note = {
-      id: 'earlier-slot',
-      content: 'body',
-      occursAt: new Date(2026, 7, 25, 18, 30),
-      createdAt: new Date(2026, 7, 27, 9, 0),
-      modifiedAt: new Date(2026, 7, 27, 9, 0),
-    }
+  it('leaves the periods it was given untouched', () => {
+    assignNotes(periods, today, [note('2026-08-25', 4)])
 
-    const periods = assignNotes(buildPeriods(day, 3), [later, earlier])
-
-    expect(periods[6].notes.map((n) => n.id)).toEqual(['earlier-slot', 'later-slot'])
-  })
-
-  it('drops notes occurring on another day', () => {
-    const periods = assignNotes(buildPeriods(day, 3), [note('yesterday', new Date(2026, 7, 24, 19, 30))])
-
-    expect(periods.flatMap((period) => period.notes)).toEqual([])
-  })
-
-  it('compares instants, not clock fields, for a note carrying a non-UTC offset', () => {
-    // 19:30 local, as an offset timestamp the way the API sends it.
-    const local = new Date(2026, 7, 25, 19, 30)
-    const offsetIso = new Date(local.getTime()).toISOString() // same instant, UTC-rendered
-
-    const periods = assignNotes(buildPeriods(day, 3), [note('offset', new Date(offsetIso))])
-
-    expect(periods[6].notes.map((n) => n.id)).toEqual(['offset'])
+    expect(periods.every((period) => period.note === null)).toBe(true)
   })
 })
 
-describe('formatting', () => {
-  const period: Period = buildPeriods(day, 3)[6]
-
-  it('formats the gutter label as a zero-padded 24-hour start time', () => {
-    expect(formatPeriodStart(period)).toBe('18:00')
-    expect(formatPeriodStart(buildPeriods(day, 3)[0])).toBe('00:00')
-  })
-
-  it('formats the full range for the dialog title and accessible name', () => {
-    expect(formatPeriodLabel(period)).toBe('18:00 – 21:00')
-  })
-
-  it('shows a period ending at midnight as 00:00', () => {
-    expect(formatPeriodLabel(buildPeriods(day, 3)[7])).toBe('21:00 – 00:00')
-  })
-
-  it('formats a day heading as dd/mm/yyyy', () => {
-    expect(formatDayHeading(day)).toBe('25/08/2026')
-    expect(formatDayHeading(new Date(2026, 0, 5))).toBe('05/01/2026')
+describe('formatPeriodStart', () => {
+  it('is the ordinal’s own hour, zero-padded', () => {
+    expect(formatPeriodStart({ ordinal: 1, note: null }, 3)).toBe('00:00')
+    expect(formatPeriodStart({ ordinal: 7, note: null }, 3)).toBe('18:00')
+    expect(formatPeriodStart({ ordinal: 10, note: null }, 1)).toBe('09:00')
   })
 })
 
-describe('nextDay', () => {
-  it('returns local midnight on the following day', () => {
-    expect(nextDay(day)).toEqual(new Date(2026, 7, 26, 0, 0, 0, 0))
+describe('formatPeriodLabel', () => {
+  it('spans the period', () => {
+    expect(formatPeriodLabel({ ordinal: 4, note: null }, 3)).toBe('09:00 – 12:00')
+    expect(formatPeriodLabel({ ordinal: 1, note: null }, 6)).toBe('00:00 – 06:00')
   })
 
-  it('rolls over month ends', () => {
-    expect(nextDay(new Date(2026, 7, 31, 23, 59))).toEqual(new Date(2026, 8, 1, 0, 0, 0, 0))
+  it('ends the day at midnight rather than at 24:00', () => {
+    expect(formatPeriodLabel({ ordinal: 8, note: null }, 3)).toBe('21:00 – 00:00')
+    expect(formatPeriodLabel({ ordinal: 24, note: null }, 1)).toBe('23:00 – 00:00')
+  })
+})
+
+describe('formatDayHeading', () => {
+  it('reads the day back as a British date', () => {
+    expect(formatDayHeading(day('2026-08-25'))).toBe('25/08/2026')
+    expect(formatDayHeading(day('2027-01-02'))).toBe('02/01/2027')
   })
 })

@@ -1,11 +1,8 @@
-import { isCurrentPeriod } from './periods'
-import type { Period } from '../types'
-
 const DEFAULT_EXCERPT_LENGTH = 40
 
 /**
- * One-line plain-text summary for the button that opens a note. Crude by design — enough to tell
- * two notes apart, not a markdown renderer.
+ * One-line plain-text summary of a period's note. Crude by design — enough to read the row at a
+ * glance, not a markdown renderer.
  */
 export function noteExcerpt(content: string, maxLength = DEFAULT_EXCERPT_LENGTH): string {
   const firstLine = content
@@ -20,13 +17,4 @@ export function noteExcerpt(content: string, maxLength = DEFAULT_EXCERPT_LENGTH)
   const collapsed = firstLine.replace(/\s+/g, ' ')
 
   return collapsed.length > maxLength ? `${collapsed.slice(0, maxLength)}…` : collapsed
-}
-
-/**
- * The `occursAt` a new note is stamped with, and the only timestamp the client sends: the real
- * time of day when writing into the live slot, the slot start otherwise, where no time of day is
- * meaningful. `createdAt`/`modifiedAt` are the server's.
- */
-export function occursAtFor(period: Period, now: Date): Date {
-  return isCurrentPeriod(period, now) ? now : period.start
 }

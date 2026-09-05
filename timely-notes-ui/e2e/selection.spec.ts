@@ -45,11 +45,22 @@ test('carries the selection onto another day — it is page-wide, not per day', 
   await expect(scheduleView.day(FOCUS).selectedRow).toHaveCount(0)
 })
 
-test('opens a note in an unselected row without moving the selection', async ({ scheduleView }) => {
-  await scheduleView.day(FOCUS).note('09:00 Morning block: drafted the TDD plan.').click()
+// The defect this closes: a filled row used to carry its own way in, addressing a different slot.
+test('offers no way into a row that is not selected, filled or empty', async ({ scheduleView }) => {
+  const filled = scheduleView.day(FOCUS).row('09:00 – 12:00')
 
-  await expect(scheduleView.dialog.getByRole('heading')).toHaveText('09:00 – 12:00')
-  await expect(scheduleView.day(FOCUS).selectedRow).toHaveAttribute('aria-label', '18:00 – 21:00')
+  await expect(filled).toContainText('Morning block')
+  await expect(filled.getByRole('button')).toHaveCount(0)
+  await expect(scheduleView.day(FOCUS).row('00:00 – 03:00').getByRole('button')).toHaveCount(0)
+})
+
+test('opens the selected period’s own note, not an empty editor', async ({ scheduleView }) => {
+  await scheduleView.day(FOCUS).row('09:00 – 12:00').click()
+  await scheduleView.day(FOCUS).noteButton.click()
+
+  await expect(scheduleView.dialog.getByRole('heading').first()).toHaveText('09:00 – 12:00')
+  await expect(scheduleView.editor).toContainText('Morning block: drafted the TDD plan.')
+  await expect(scheduleView.day(FOCUS).noteText('Morning block')).toHaveCount(1)
 })
 
 test('opens the dialog from Note without changing the selection', async ({ scheduleView }) => {
@@ -77,14 +88,14 @@ test('selects a focused row on Space without scrolling the page', async ({ page,
   expect(await page.evaluate(() => window.scrollY)).toBe(before)
 })
 
-test('does not re-select the row when Enter lands on a button inside it', async ({
+test('opens rather than re-selects when Enter lands on the row’s button', async ({
   scheduleView,
 }) => {
-  const note = scheduleView.day(FOCUS).note('09:00 Morning block: drafted the TDD plan.')
-  await note.focus()
-  await note.press('Enter')
+  const open = scheduleView.day(FOCUS).noteButton
+  await open.focus()
+  await open.press('Enter')
 
-  await expect(scheduleView.dialog.getByRole('heading')).toHaveText('09:00 – 12:00')
+  await expect(scheduleView.dialog.getByRole('heading').first()).toHaveText('18:00 – 21:00')
   await expect(scheduleView.day(FOCUS).selectedRow).toHaveAttribute('aria-label', '18:00 – 21:00')
 })
 
@@ -105,8 +116,8 @@ test('rolls an untouched view over at midnight, asking only for the day it gaine
   await expect(scheduleView.rolloverNotice).toHaveCount(0)
 
   expect(api.notesWindows).toEqual([
-    's3 2026-08-24T00:00:00+01:00 2026-08-27T00:00:00+01:00',
-    's3 2026-08-27T00:00:00+01:00 2026-08-28T00:00:00+01:00',
+    's3 2026-08-24 2026-08-27',
+    's3 2026-08-27 2026-08-28',
   ])
 })
 
@@ -134,10 +145,10 @@ test('keeps an open dialog open across midnight, on its own period', async ({
   scheduleView,
 }) => {
   await scheduleView.day(FOCUS).noteButton.click()
-  await expect(scheduleView.dialog.getByRole('heading')).toHaveText('18:00 – 21:00')
+  await expect(scheduleView.dialog.getByRole('heading').first()).toHaveText('18:00 – 21:00')
 
   await page.clock.fastForward(FOUR_HOURS)
 
   await expect(scheduleView.dialog).toBeVisible()
-  await expect(scheduleView.dialog.getByRole('heading')).toHaveText('18:00 – 21:00')
+  await expect(scheduleView.dialog.getByRole('heading').first()).toHaveText('18:00 – 21:00')
 })

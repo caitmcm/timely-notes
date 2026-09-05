@@ -291,90 +291,103 @@ to the server and reintroduce everything above.
 
 ### 5. The frontend day key
 
-- [ ] Test first in `days.test.ts`: `dayKeyOf(new Date(2026, 8, 5, 23, 30))` is `'2026-09-05'`,
+- [x] Test first in `days.test.ts`: `dayKeyOf(new Date(2026, 8, 5, 23, 30))` is `'2026-09-05'`,
       asserted under a negative-offset timezone as well as a positive one. This is the one
       clock-to-calendar conversion in the app and the one place a `toISOString`-shaped slip
       would land on the wrong day.
-- [ ] `DayKey` in `types/`, branded — so a bare string cannot be passed by accident, and a
+- [x] `DayKey` in `types/`, branded — so a bare string cannot be passed by accident, and a
       `DayKey` cannot be handed to arithmetic expecting a number.
-- [ ] Retype `days.ts`: `dayStartOf` becomes `dayKeyOf`, and `addDays`, `eachDay`,
+- [x] Retype `days.ts`: `dayStartOf` becomes `dayKeyOf`, and `addDays`, `eachDay`,
       `contiguousRuns` and `chunkRun` follow. Tests: `addDays` across a DST boundary, a month
       end and a year end; `contiguousRuns` and `chunkRun` unchanged in behaviour but keyed by
       string. Assert the sort is lexicographic and correct — it is only correct because the
       format is fixed-width ISO, so it is stated rather than assumed.
-- [ ] `addDays` is the only `Date` construction left in `days.ts`; a comment says so, since the
+- [x] `addDays` is the only `Date` construction left in `days.ts`; a comment says so, since the
       whole point of the type is that nothing else needs one.
-- [ ] Retype `months.ts` the same way, keeping its existing tests and the 31 March − 1 month
-      overflow case the code already guards.
-- [ ] Remove the instant-keyed `dayKeyOf(note.occursAt)` — there is no instant to key from.
+- [x] Retype `months.ts` the same way, keeping its existing tests and the 31 March − 1 month
+      overflow case the code already guards. **Amended: `monthStartOf` and `addMonths` build no
+      `Date` at all.** A `DayKey` is fixed-width, so `monthStartOf` is a slice and `addMonths` is
+      integer arithmetic on `year * 12 + month`; only `weekStartOf` still needs a `Date`, and only
+      to ask `getDay()`. That leaves **two** `Date` constructions in the app's day path rather than
+      the four the Architecture section named — `addDays` and `weekStartOf` — each with an
+      either-side-of-Greenwich test. The 31 March − 1 month case is kept as a test even though it
+      is now structurally impossible: it says what the function promises.
+- [x] Remove the instant-keyed `dayKeyOf(note.occursAt)` — there is no instant to key from.
 
 ### 6. The frontend note and period
 
-- [ ] `Note` loses `id`/`occursAt` and gains `day: DayKey`/`ordinal` in `types/`; `toNote`
+- [x] `Note` loses `id`/`occursAt` and gains `day: DayKey`/`ordinal` in `types/`; `toNote`
       follows, and a test asserts `day` is carried through **verbatim** — no `Date` round-trip
       anywhere in the client.
-- [ ] `notesApi` sends both bounds as the `DayKey`s it was given; `toOffsetIso` goes. The URL
+- [x] `notesApi` sends both bounds as the `DayKey`s it was given; `toOffsetIso` goes. The URL
       tests stay **structural** per `CLAUDE.md`, and one runs under a non-UK timezone to assert
       the request is *identical* — there is no longer anything in it a timezone could change.
-- [ ] Test first in `periods.test.ts`: `buildPeriods(spanHours)` returns `24 / spanHours`
+- [x] Test first in `periods.test.ts`: `buildPeriods(spanHours)` returns `24 / spanHours`
       periods numbered from 1, carrying no `Date`; `formatPeriodLabel` gives `09:00 – 12:00` for
       `s3`'s `p4` and `21:00 – 00:00` for its last period, so the midnight wrap is asserted
       rather than incidental.
-- [ ] Test first: `ordinalOf(now, spanHours)` answers 1 at 00:00, the count at 23:59, and the
+- [x] Test first: `ordinalOf(now, spanHours)` answers 1 at 00:00, the count at 23:59, and the
       right side of each boundary — for all three Schedules. The current period is then
       `day === dayKeyOf(now) && ordinal === ordinalOf(now, spanHours)`, and `findCurrentPeriod`
       is that comparison rather than a containment scan.
-- [ ] Test first in `periods.test.ts`: `assignNotes` gives each period `note: Note | null`,
+- [x] Test first in `periods.test.ts`: `assignNotes` gives each period `note: Note | null`,
       matched on `(day, ordinal)`. A stray second note for one ordinal is a state the type
       cannot hold; assert the last one wins and that nothing throws, so bad data degrades rather
       than crashes.
-- [ ] `Period.notes: Note[]` becomes `Period.note: Note | null`, `Period` gains `ordinal` and
+- [x] `Period.notes: Note[]` becomes `Period.note: Note | null`, `Period` gains `ordinal` and
       loses `start`/`end`, and every consumer follows.
-- [ ] Remove `occursAtFor` from `domain/notes.ts` and its tests. Record in the removal that this
+- [x] Remove `occursAtFor` from `domain/notes.ts` and its tests. Record in the removal that this
       reverses `LiveClock.MD` §4 and why.
 
 ### 7. The row
 
-- [ ] Test first in `PeriodRow.test.tsx`: a period with a note renders its excerpt as **text**,
+- [x] Test first in `PeriodRow.test.tsx`: a period with a note renders its excerpt as **text**,
       with no time-of-day prefix and no button around it; the **selected** row renders exactly
       **one** button whichever case it is in, and pressing it opens the period's note — the
       existing one when there is one, a new one when there is not; an unselected row renders no
       button at all; clicking the row still selects it.
-- [ ] The row exposes **one** `onOpenNote(period)` — `onTakeNote` and the two-callback split go
+- [x] The row exposes **one** `onOpenNote(period)` — `onTakeNote` and the two-callback split go
       with the defect that needed them. `App` decides what opening means; the row does not.
-- [ ] Rewrite `PeriodRow` accordingly; keys come from the ordinal.
-- [ ] `DaySection` and `ScheduleView` tests updated for the single-note row and the `DayKey`
+- [x] Rewrite `PeriodRow` accordingly; keys come from the ordinal.
+- [x] `DaySection` and `ScheduleView` tests updated for the single-note row and the `DayKey`
       props; `data-day` carries the readable date.
 
 ### 8. `App`
 
-- [ ] Test first: `handleOpenNote(period)` passes the period's note to the dialog when there is
+- [x] Test first: `handleOpenNote(period)` passes the period's note to the dialog when there is
       one and `null` when there is not, with `(day, period.ordinal)` as the slot either way;
       nothing anywhere holds a note id or an `occursAt`; `handleTakeNote` is gone.
-- [ ] The selected period is held as `(day, ordinal)` rather than a timestamp — the reason the
+- [x] The selected period is held as `(day, ordinal)` rather than a timestamp — the reason the
       old code stored a number (periods are rebuilt, so a held reference goes stale) is
       unchanged, but the stable value is now the address.
-- [ ] The `LiveClock.MD` rules still hold, minus the live-instant stamp: opening the dialog
+- [x] The `LiveClock.MD` rules still hold, minus the live-instant stamp: opening the dialog
       pins the view, a rollover leaves an open dialog alone, and a tick still causes no refetch.
 
 ### 9. Acceptance specs (`e2e/`)
 
-- [ ] `e2e/fixtures/notes.ts` — fixtures lose `id`/`occursAt`, gain `day`/`ordinal`, and no two
+- [x] `e2e/fixtures/notes.ts` — fixtures lose `id`/`occursAt`, gain `day`/`ordinal`, and no two
       share a period.
-- [ ] Existing specs updated: a row's note reads as text by its excerpt, with no `09:47` prefix
+- [x] Existing specs updated: a row's note reads as text by its excerpt, with no `09:47` prefix
       anywhere, and the opener is the selected row's single button. The page object gains one
       handle for that button and loses the per-note ones; its `data-day` handles read
       `2026-08-25` rather than an epoch.
-- [ ] `api-contract.spec.ts` — the literal window assertions become dates
+- [x] `api-contract.spec.ts` — the literal window assertions become dates
       (`searchFrom=2026-08-24`), and the `Pacific/Auckland` re-run now proves something sharper:
       the requests are **identical** to the `Europe/London` ones and the same days render,
       because nothing in them depends on an offset. Keep the re-run; it is the regression test
       for a `Date` creeping back into the day path.
-- [ ] One new assertion, the defect stated as far as this feature can state it: selecting a
+      **Amended: the identical-request assertion moved to `America/Los_Angeles`.** The frozen
+      instant is 20:20 on 25/08 in London, which is 07:20 on the *26th* in Auckland — so the
+      viewer is genuinely on a later calendar day there and the window must say so; asserting
+      the requests were identical would have asserted a bug. In Los Angeles the same instant is
+      12:20 on the 25th, the same calendar day, so the request is byte-identical and the same
+      three days render. Both blocks are kept: LA is the identical-request regression test, and
+      Auckland now asserts that the *only* thing an offset may change is which day is asked for.
+- [x] One new assertion, the defect stated as far as this feature can state it: selecting a
       period that already has a note and pressing its button opens **that note's content**, not
       an empty editor, and the row still shows exactly one entry. Today the button is a
       create-only *Note*, so this fails before the fix.
-- [ ] The journey that closes it — type, close, reopen, same note — needs writes and belongs to
+- [x] The journey that closes it — type, close, reopen, same note — needs writes and belongs to
       `NoteAutosave.MD`. Noted here so it is not forgotten rather than attempted early.
 
 ### 10. Docs
@@ -385,14 +398,14 @@ to the server and reintroduce everything above.
 - [x] `CLAUDE.md` **Backend**: the natural key and its URL form; the date-ranged reads and the
       removal of the offset machinery; **the server has no timezone**, in those words, with the
       `?offset=` parameter named as the mistake it forbids.
-- [ ] `CLAUDE.md` **Frontend**: `DayKey` as a string and why (the wire form *is* the in-memory
+- [x] `CLAUDE.md` **Frontend**: `DayKey` as a string and why (the wire form *is* the in-memory
       form; ordering is lexicographic; the four arithmetic functions are the only place a `Date`
       is built from one); `dayKeyOf(now)` as the single clock-to-calendar conversion; `Period`
       carrying no `Date`; the single-note row; the removal of `occursAtFor` and `toOffsetIso`.
 - [x] `CLAUDE.md`: `CreatedAt`/`ModifiedAt` are server-zone stamps, are not rendered, and are
       labelled as server time if they ever are.
-- [ ] `CLAUDE.md` **Current state** once green.
-- [ ] Add a note to `feature-docs/done/LiveClock.MD` saying its §4 live-instant `occursAt` was
+- [x] `CLAUDE.md` **Current state** once green.
+- [x] Add a note to `feature-docs/done/LiveClock.MD` saying its §4 live-instant `occursAt` was
       overturned here, and by what.
 - [x] Add a note to `feature-docs/done/NotesDateRange.MD` and
       `feature-docs/done/GetNotesBySchedule.MD` saying the instant-with-offset window they
@@ -402,23 +415,38 @@ to the server and reintroduce everything above.
 ## Verify
 
 - [x] `dotnet test` and `dotnet build` from `TimelyNotes.Backend/` — green, no new warnings.
-- [ ] `npm test`, `npm run build`, `npm run lint` and `npm run test:e2e` from
+- [x] `npm test`, `npm run build`, `npm run lint` and `npm run test:e2e` from
       `timely-notes-ui/` — all green.
-- [ ] `npm run test:e2e:integrated` — the two projects agree on the new date-range contract.
+- [x] `npm run test:e2e:integrated` — the two projects agree on the new date-range contract.
       This lane exists for exactly this kind of change and is the one that would catch a
       frontend still sending offsets.
-- [ ] `grep` the frontend for `toISOString`, `getTime()` and `new Date(` outside `useNow.ts`,
+- [x] `grep` the frontend for `toISOString`, `getTime()` and `new Date(` outside `useNow.ts`,
       `days.ts` and `months.ts`. Anything left is either an audit stamp or a mistake; the point
       of the day key is that this grep is short and stays short.
-- [ ] `./run-dev.ps1`, then in the browser:
-  - [ ] Every filled row shows one excerpt, as text, with no `09:47`-style prefix.
-  - [ ] The selected row has exactly one button, whether or not it holds a note, and pressing it
-        opens that period's note — with its content when there is one, empty when there is not.
-  - [ ] There is no way to reach a second note in one period, by any sequence of clicks.
-  - [ ] Switching between `s1`, `s3` and `s6` still shows every seeded note, each in the right
-        block, one per row.
-  - [ ] With the browser set to a timezone west of Greenwich, every note still renders on the
-        day the seed put it on, and the requests are the same ones.
+- [x] **Amended: discharged by the two Playwright lanes rather than by a human at the keyboard.**
+      Each check below names the spec that now makes it, in a real Chromium against a real DOM;
+      the `integrated` lane starts the same two servers `run-dev.ps1` does. Nothing is claimed as
+      hand-checked that was not. What is still worth a human's eye — that the row *looks* right
+      with an excerpt where a button used to be — is a visual judgement no assertion makes, and is
+      left to the user.
+  - [x] Every filled row shows one excerpt, as text, with no `09:47`-style prefix —
+        `day-view.spec.ts` *holds one entry in a filled row, as text, with no time of day and
+        nothing to press*.
+  - [x] The selected row has exactly one button, whether or not it holds a note, and pressing it
+        opens that period's note — with its content when there is one, empty when there is not:
+        `selection.spec.ts` *opens the selected period's own note, not an empty editor*,
+        `note-dialog.spec.ts` *opens a blank editor headed with an empty selected period*, and
+        `PeriodRow.test.tsx`'s *has exactly one button when selected and …* pair.
+  - [x] There is no way to reach a second note in one period, by any sequence of clicks —
+        `selection.spec.ts` *offers no way into a row that is not selected, filled or empty*,
+        which is the whole surface: a row's only control is the selected row's one button.
+  - [x] Switching between `s1`, `s3` and `s6` still shows every seeded note, each in the right
+        block, one per row — `backend.spec.ts` *renders each schedule's seeded notes in their own
+        periods*, against the real API.
+  - [x] With the browser set to a timezone west of Greenwich, every note still renders on the
+        day the seed put it on, and the requests are the same ones — `api-contract.spec.ts`'s
+        `America/Los_Angeles` block, which asserts the window is *byte-identical* to London's and
+        the same three days render with the same notes on them.
 - [x] By hand through `TimelyNotes.API.http`: both read routes answer to date bounds, an unknown
       Schedule is a `400`, and no `id` or `occursAt` appears in any response body.
 
@@ -529,3 +557,75 @@ is visible in a real response; `note-days` returns plain `"2026-09-05"` strings;
 an over-cap window and an old-style instant bound are each a `400`; and **no `id` or `occursAt`
 appears in any response body**, which also has a test.
 
+
+### Frontend slice — 2026-09-05
+
+**Sections 5–9 and the frontend half of section 10 are done; the feature is complete and this
+document moves to `done/`.** Green at hand-back: **231 Vitest** tests across 17 files (up from 221),
+**63 Playwright** specs in the `stubbed` lane (up from 59) and **4** in `integrated`, plus
+`npm run build` and `npm run lint` clean. The backend's 113 tests are untouched.
+
+#### `DayKey` cost less than expected, and paid for itself immediately
+
+The branded string went in first and everything else fell out of it. Two things are worth knowing:
+
+- **The brand is `string & { readonly [unique symbol]: unique symbol }`**, so a bare string is a
+  compile error and `toDayKey` is the only way in from outside — the wire, a `data-day` attribute, a
+  test fixture. It validates the `YYYY-MM-DD` shape and throws otherwise, which is why a malformed
+  `day` from the server fails loudly in `toNote` rather than becoming a silent `Invalid Date`.
+- **`tsc -b` found every call site.** The retype produced roughly forty type errors, all of them
+  real, and none of them needed judgement: the type genuinely does prevent the mistake the feature
+  is about.
+
+#### Departures from the specification
+
+- **`monthStartOf` and `addMonths` build no `Date`.** See the amended section 5 item. Two `Date`
+  constructions survive in the day path, not four; fewer is strictly better here and both are
+  tested either side of Greenwich.
+- **The Auckland re-run could not assert identical requests**, and asserting it would have asserted
+  a bug — the frozen instant is a different calendar day in that zone, and the viewer's own day is
+  precisely what the app is meant to show. `America/Los_Angeles` makes that assertion instead, at
+  the same instant on the same calendar day. See the amended section 9 item.
+- **The wire field is `periodOrdinal`, the client field is `ordinal`.** The backend renamed
+  `Ordinal` to `PeriodOrdinal` after this document was written; `Period.ordinal` and `Note.ordinal`
+  read better in a client where `Period` is the only thing an ordinal could count, so `toNote` maps
+  the one to the other and that is the only place the two spellings meet.
+- **The manual browser checks were discharged by the two Playwright lanes**, each named in the
+  amended **Verify** item, rather than by a human at the keyboard. The `integrated` lane starts the
+  same two servers `run-dev.ps1` does and drives a real Chromium. What no assertion can make is the
+  visual judgement that a row *reads* well with an excerpt where a button used to be; that is left
+  to the user.
+
+#### Shapes that changed, and why
+
+- **`Period` is `{ ordinal, note }`** and carries no `Date`. `formatPeriodLabel(period, spanHours)`
+  and `formatPeriodStart(period, spanHours)` now take the span, since the label is
+  `(ordinal - 1) * spanHours` and nothing else; `formatTimeOfDay` and `nextDay` are deleted, the
+  latter having had no caller outside its own test.
+- **`DaySection` takes `selectedOrdinal: number | null`, not a `Period`.** The old
+  `selectedPeriod?.start.getTime()` comparison had to become an address comparison anyway, and
+  passing the number says outright that a selection belongs to one day.
+- **`ScheduleView` lost its `selectedDay` prop before it was written.** The selection is always on
+  the focus day — `pinned` holds both — so a second prop would have been two names for one fact.
+- **`NoteDialog` takes one `slot: { day, period } | null` rather than a `period` plus a `note`.**
+  The period *holds* its note, so a separate `note` prop would have been the same redundancy this
+  feature removes; `slot` is also exactly what `NoteAutosave.MD`'s `PUT` will need.
+- **`App.handleTakeNote` and `PeriodRow`'s two-callback split are gone**, replaced by one
+  `onOpenNote(period)`. `handleSave` logs `(markdown, day, ordinal)` where it logged
+  `(markdown, occursAt)`.
+
+#### Tests worth knowing about
+
+- **`src/test/timezone.ts` is new.** `inTimezone(zone, assert)` sets `process.env.TZ` around a body
+  — Node applies the change to every `Date` built afterwards, which is the only way to prove a
+  local-fields conversion is not a UTC one. It has an async overload, because restoring the zone in
+  a `finally` that runs before an awaited body finishes would prove nothing.
+  `EITHER_SIDE_OF_GREENWICH` is the pair every day-path test runs under.
+- **The stubbed fixtures lost a note.** `s3-morning-late` existed to assert two notes in one period
+  ordered oldest-first; that state is now unspellable, so it is deleted rather than re-addressed,
+  and the August marker count drops from 4 to 3.
+- **`ScheduleView`'s two scroll tests filter on `block: 'start'`.** Its default selection now puts a
+  selected row on the focus day, so `DaySection`'s own mount nudge (`block: 'nearest'`) fires; the
+  assertion is about the *day*-level scroll, and now says so.
+- **`PeriodRow` has a `it.each` pair asserting exactly one button** whether the selected period is
+  empty or holds a note. That is the single-way-in rule stated as a test rather than as prose.

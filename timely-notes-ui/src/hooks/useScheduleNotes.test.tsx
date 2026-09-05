@@ -1,31 +1,31 @@
 import { act, render, screen, waitFor } from '@testing-library/react'
-import { eachDay } from '../domain/days'
+import { eachDay, toDayKey } from '../domain/days'
 import { SCHEDULES } from '../domain/schedules'
-import type { Schedule } from '../types'
+import type { DayKey, Schedule } from '../types'
 import { useScheduleNotes } from './useScheduleNotes'
 
 const s3 = SCHEDULES[1]
 const s6 = SCHEDULES[2]
 
-const day = (dayOfMonth: number) => new Date(2026, 7, dayOfMonth).getTime()
+const day = (dayOfMonth: number) => toDayKey(`2026-08-${String(dayOfMonth).padStart(2, '0')}`)
 
 const writtenAt = new Date(2026, 7, 28, 9, 12).toISOString()
 
-const wireNote = (id: string, dayOfMonth: number, hour: number) => ({
-  id,
-  content: `Note ${id}`,
-  occursAt: new Date(2026, 7, dayOfMonth, hour).toISOString(),
+const wireNote = (dayOfMonth: number) => ({
+  day: day(dayOfMonth),
+  periodOrdinal: 4,
+  content: `d${dayOfMonth}`,
   createdAt: writtenAt,
   modifiedAt: writtenAt,
 })
 
 /** One note a day across the whole of August, so any window has something in it. */
-const august = Array.from({ length: 31 }, (_, index) => wireNote(`d${index + 1}`, index + 1, 9))
+const august = Array.from({ length: 31 }, (_, index) => wireNote(index + 1))
 
 interface Window {
   shortName: string
-  from: number
-  to: number
+  from: string
+  to: string
 }
 
 const windowOf = (url: string): Window => {
@@ -33,12 +33,12 @@ const windowOf = (url: string): Window => {
 
   return {
     shortName: parsed.pathname.split('/')[3],
-    from: new Date(parsed.searchParams.get('searchFrom')!).getTime(),
-    to: new Date(parsed.searchParams.get('searchTo')!).getTime(),
+    from: parsed.searchParams.get('searchFrom')!,
+    to: parsed.searchParams.get('searchTo')!,
   }
 }
 
-/** Answers like the API: the notes whose `occursAt` is in the half-open window. */
+/** Answers like the API: the notes whose day is in the half-open window. */
 function stubFetch(notes = august) {
   const fetchMock = vi.fn(async (url: string) => {
     const { from, to } = windowOf(url)
@@ -46,12 +46,7 @@ function stubFetch(notes = august) {
     return {
       ok: true,
       status: 200,
-      json: async () =>
-        notes.filter((note) => {
-          const at = new Date(note.occursAt).getTime()
-
-          return at >= from && at < to
-        }),
+      json: async () => notes.filter((note) => note.day >= from && note.day < to),
     } as Response
   })
   vi.stubGlobal('fetch', fetchMock)
@@ -85,10 +80,12 @@ function stubHeldFetch() {
 const windows = (fetchMock: ReturnType<typeof stubFetch>) =>
   fetchMock.mock.calls.map((call) => windowOf(call[0] as string))
 
+const byFrom = (asked: Window[]) => [...asked].sort((a, b) => a.from.localeCompare(b.from))
+
 interface ProbeProps {
   schedule: Schedule
-  from: number
-  to: number
+  from: DayKey
+  to: DayKey
 }
 
 function Probe({ schedule, from, to }: ProbeProps) {
@@ -97,10 +94,10 @@ function Probe({ schedule, from, to }: ProbeProps) {
   return (
     <ul>
       {error && <li data-testid="error">{error}</li>}
-      {eachDay(from, to).map((dayStart) => (
-        <li key={dayStart} data-testid={`day-${dayStart}`} data-loaded={isLoaded(dayStart)}>
-          {notesFor(dayStart)
-            .map((note) => note.id)
+      {eachDay(from, to).map((value) => (
+        <li key={value} data-testid={`day-${value}`} data-loaded={isLoaded(value)}>
+          {notesFor(value)
+            .map((note) => note.content)
             .join(',')}
         </li>
       ))}
@@ -115,7 +112,7 @@ describe('useScheduleNotes', () => {
     vi.unstubAllGlobals()
   })
 
-  it('requests the wanted days in one window and buckets the answer by occursAt', async () => {
+  it('requests the wanted days in one window and buckets the answer by day', async () => {
     const fetchMock = stubFetch()
 
     render(<Probe schedule={s3} from={day(24)} to={day(26)} />)
@@ -168,8 +165,7 @@ describe('useScheduleNotes', () => {
     render(<Probe schedule={s3} from={day(10)} to={day(21)} />)
 
     await waitFor(() => expect(dayCell(21)).toHaveTextContent('d21'))
-    const asked = windows(fetchMock).sort((a, b) => a.from - b.from)
-    expect(asked).toEqual([
+    expect(byFrom(windows(fetchMock))).toEqual([
       { shortName: 's3', from: day(10), to: day(15) },
       { shortName: 's3', from: day(15), to: day(20) },
       { shortName: 's3', from: day(20), to: day(22) },
@@ -184,8 +180,7 @@ describe('useScheduleNotes', () => {
     rerender(<Probe schedule={s3} from={day(14)} to={day(16)} />)
 
     await waitFor(() => expect(dayCell(16)).toHaveTextContent('d16'))
-    const asked = windows(fetchMock).slice(1).sort((a, b) => a.from - b.from)
-    expect(asked).toEqual([
+    expect(byFrom(windows(fetchMock).slice(1))).toEqual([
       { shortName: 's3', from: day(14), to: day(15) },
       { shortName: 's3', from: day(16), to: day(17) },
     ])

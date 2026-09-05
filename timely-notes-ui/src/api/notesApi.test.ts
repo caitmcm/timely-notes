@@ -1,13 +1,15 @@
 import { getNoteDaysBySchedule, getNotesBySchedule } from './notesApi'
+import { toDayKey } from '../domain/days'
+import { EITHER_SIDE_OF_GREENWICH, inTimezone } from '../test/timezone'
 
-/** The default window App sends: yesterday's midnight to the day after tomorrow's. */
-const searchFrom = new Date(2026, 7, 24)
-const searchTo = new Date(2026, 7, 27)
+/** The default window App sends: yesterday, to the day after tomorrow — half-open. */
+const searchFrom = toDayKey('2026-08-24')
+const searchTo = toDayKey('2026-08-27')
 
 const wireNote = (overrides: Record<string, unknown> = {}) => ({
-  id: '11111111-1111-1111-1111-111111111111',
+  day: '2026-08-25',
+  periodOrdinal: 6,
   content: 'Afternoon block: wired up FastEndpoints.',
-  occursAt: '2026-08-25T15:00:00+01:00',
   createdAt: '2026-08-28T09:12:33+01:00',
   modifiedAt: '2026-08-28T09:12:33+01:00',
   ...overrides,
@@ -43,35 +45,39 @@ describe('getNotesBySchedule', () => {
     expect(calledUrl(fetchMock).parsed.pathname).toBe('/api/schedules/s3/notes')
   })
 
-  it('sends the window as searchFrom and searchTo query parameters', async () => {
+  it('sends both bounds as the plain days it was given', async () => {
     const fetchMock = stubFetch()
 
     await getNotesBySchedule('s3', searchFrom, searchTo, new AbortController().signal)
 
     const { searchParams } = calledUrl(fetchMock).parsed
-    expect(new Date(searchParams.get('searchFrom')!).getTime()).toBe(searchFrom.getTime())
-    expect(new Date(searchParams.get('searchTo')!).getTime()).toBe(searchTo.getTime())
+    expect(searchParams.get('searchFrom')).toBe('2026-08-24')
+    expect(searchParams.get('searchTo')).toBe('2026-08-27')
   })
 
-  it('serialises the bounds as ISO 8601 instants carrying their UTC offset', async () => {
-    const fetchMock = stubFetch()
-
-    await getNotesBySchedule('s3', searchFrom, searchTo, new AbortController().signal)
-
-    const { searchParams } = calledUrl(fetchMock).parsed
-    const offsetIso = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/
-    expect(searchParams.get('searchFrom')).toMatch(offsetIso)
-    expect(searchParams.get('searchTo')).toMatch(offsetIso)
-  })
-
-  it('percent-encodes the bounds, so a + offset is not read as a space', async () => {
+  it('leaves nothing in the query needing an escape', async () => {
     const fetchMock = stubFetch()
 
     await getNotesBySchedule('s3', searchFrom, searchTo, new AbortController().signal)
 
     const { raw } = calledUrl(fetchMock)
-    expect(raw.slice(raw.indexOf('?'))).not.toMatch(/[+:]/)
-    expect(raw).toContain('%3A')
+    expect(raw.slice(raw.indexOf('?'))).not.toMatch(/%/)
+  })
+
+  // There is nothing left in the request an offset could change; this is what says so.
+  it.each(EITHER_SIDE_OF_GREENWICH)('asks for the same URL in %s', async (zone) => {
+    const fetchMock = stubFetch()
+
+    await getNotesBySchedule('s3', searchFrom, searchTo, new AbortController().signal)
+    const here = calledUrl(fetchMock).raw
+
+    let there = ''
+    await inTimezone(zone, async () => {
+      await getNotesBySchedule('s3', searchFrom, searchTo, new AbortController().signal)
+      there = fetchMock.mock.calls[1][0]
+    })
+
+    expect(there).toBe(here)
   })
 
   it('forwards the abort signal to fetch', async () => {
@@ -83,31 +89,50 @@ describe('getNotesBySchedule', () => {
     expect(fetchMock.mock.calls[0][1]).toMatchObject({ signal })
   })
 
-  it('maps the JSON payload to notes with parsed dates', async () => {
+  it('maps the payload to a note addressed by its day and period', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse([wireNote()])))
 
     const notes = await getNotesBySchedule('s3', searchFrom, searchTo, new AbortController().signal)
 
     expect(notes).toHaveLength(1)
-    expect(notes[0].id).toBe('11111111-1111-1111-1111-111111111111')
+    expect(notes[0].ordinal).toBe(6)
     expect(notes[0].content).toBe('Afternoon block: wired up FastEndpoints.')
-    expect(notes[0].occursAt).toBeInstanceOf(Date)
-    expect(notes[0].occursAt.toISOString()).toBe('2026-08-25T14:00:00.000Z')
-    expect(notes[0].createdAt).toBeInstanceOf(Date)
-    expect(notes[0].modifiedAt).toBeInstanceOf(Date)
   })
 
-  it('keeps occursAt independent of createdAt', async () => {
+  // No Date round-trip anywhere in the client: `new Date('2026-08-25')` is UTC midnight.
+  it.each(EITHER_SIDE_OF_GREENWICH)('carries the day through verbatim in %s', async (zone) => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse([wireNote()])))
 
-    const [note] = await getNotesBySchedule(
-      's3',
-      searchFrom,
-      searchTo,
-      new AbortController().signal,
-    )
+    let day = ''
+    await inTimezone(zone, async () => {
+      const [note] = await getNotesBySchedule(
+        's3',
+        searchFrom,
+        searchTo,
+        new AbortController().signal,
+      )
+      day = note.day
+    })
 
-    expect(note.occursAt.getTime()).not.toBe(note.createdAt.getTime())
+    expect(day).toBe('2026-08-25')
+  })
+
+  it('parses the audit stamps, which are the only instants left', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse([wireNote()])))
+
+    const [note] = await getNotesBySchedule('s3', searchFrom, searchTo, new AbortController().signal)
+
+    expect(note.createdAt).toBeInstanceOf(Date)
+    expect(note.createdAt.toISOString()).toBe('2026-08-28T08:12:33.000Z')
+    expect(note.modifiedAt).toBeInstanceOf(Date)
+  })
+
+  it('rejects a day the server could not have sent, rather than passing it on', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse([wireNote({ day: '25/08/2026' })])))
+
+    await expect(
+      getNotesBySchedule('s3', searchFrom, searchTo, new AbortController().signal),
+    ).rejects.toThrow(/day/i)
   })
 
   it('rejects on a non-2xx response', async () => {
@@ -123,8 +148,8 @@ describe('getNotesBySchedule', () => {
 })
 
 describe('getNoteDaysBySchedule', () => {
-  const gridFrom = new Date(2026, 7, 31)
-  const gridTo = new Date(2026, 9, 5)
+  const gridFrom = toDayKey('2026-08-31')
+  const gridTo = toDayKey('2026-10-05')
 
   afterEach(() => {
     vi.unstubAllGlobals()
@@ -138,30 +163,23 @@ describe('getNoteDaysBySchedule', () => {
     expect(calledUrl(fetchMock).parsed.pathname).toBe('/api/schedules/s3/note-days')
   })
 
-  it('sends the window as offset-carrying instants, percent-encoded', async () => {
+  it('sends both bounds as plain days, with nothing to escape', async () => {
     const fetchMock = stubFetch()
 
     await getNoteDaysBySchedule('s1', gridFrom, gridTo, new AbortController().signal)
 
     const { raw, parsed } = calledUrl(fetchMock)
-    const offsetIso = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/
-    expect(new Date(parsed.searchParams.get('searchFrom')!).getTime()).toBe(gridFrom.getTime())
-    expect(new Date(parsed.searchParams.get('searchTo')!).getTime()).toBe(gridTo.getTime())
-    expect(parsed.searchParams.get('searchFrom')).toMatch(offsetIso)
-    expect(raw.slice(raw.indexOf('?'))).not.toMatch(/[+:]/)
+    expect(parsed.searchParams.get('searchFrom')).toBe('2026-08-31')
+    expect(parsed.searchParams.get('searchTo')).toBe('2026-10-05')
+    expect(raw.slice(raw.indexOf('?'))).not.toMatch(/%/)
   })
 
-  it('parses each day to a local midnight', async () => {
-    const day = new Date(2026, 8, 3)
-    // The instant the server means, written as UTC: parsing must land on the *local* day.
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(okResponse([{ day: day.toISOString(), count: 2 }])),
-    )
+  it('carries each day through verbatim', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse([{ day: '2026-09-03', count: 2 }])))
 
     const days = await getNoteDaysBySchedule('s1', gridFrom, gridTo, new AbortController().signal)
 
-    expect(days).toEqual([{ dayStart: day.getTime(), count: 2 }])
+    expect(days).toEqual([{ day: '2026-09-03', count: 2 }])
   })
 
   it('forwards the abort signal to fetch', async () => {

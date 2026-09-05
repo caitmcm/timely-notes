@@ -11,21 +11,30 @@ export interface Schedule {
   label: string
 }
 
-/** Wire timestamps already parsed to `Date`. */
+declare const dayKey: unique symbol
+
+/**
+ * A calendar day as `YYYY-MM-DD` — the wire form *is* the in-memory form. Branded so a bare string
+ * cannot stand in for one: the whole point is that a day is never an instant. Fixed-width ISO, so
+ * equality and ordering are lexicographic and the same in every timezone.
+ */
+export type DayKey = string & { readonly [dayKey]: unique symbol }
+
+/**
+ * A note is addressed by its Schedule, its day and its period, and by nothing else. `createdAt` and
+ * `modifiedAt` are the *server's* audit stamps and never place it.
+ */
 export interface Note {
-  id: string
+  day: DayKey
+  /** 1-based period of that day: on `s3`, 09:00–12:00 is 4. */
+  ordinal: number
   content: string
-  /** The slot the note is taken *for* — what the view places and orders it by. */
-  occursAt: Date
-  /** Audit stamp; never used for placement. */
   createdAt: Date
-  /** Audit stamp; never used for placement. */
   modifiedAt: Date
 }
 
-/** One block of a day. Half-open: `start` inclusive, `end` exclusive. */
+/** One block of a day, and the one note it may hold. Carries no `Date`: the ordinal is the address. */
 export interface Period {
-  start: Date
-  end: Date
-  notes: Note[]
+  ordinal: number
+  note: Note | null
 }

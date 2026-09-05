@@ -1,14 +1,15 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { buildPeriods } from '../domain/periods'
+import { toDayKey } from '../domain/days'
 import ScheduleView, { type DayView } from './ScheduleView'
 
-const day = (dayOfMonth: number) => new Date(2026, 7, dayOfMonth).getTime()
+const day = (dayOfMonth: number) => toDayKey(`2026-08-${dayOfMonth}`)
 const now = new Date(2026, 7, 25, 20, 20)
 
 const dayView = (dayOfMonth: number, isLoading = false): DayView => ({
-  dayStart: day(dayOfMonth),
-  periods: buildPeriods(new Date(day(dayOfMonth)), 3),
+  day: day(dayOfMonth),
+  periods: buildPeriods(3),
   isLoading,
 })
 
@@ -18,11 +19,11 @@ const threeDays = [dayView(24), dayView(25), dayView(26)]
 function renderView(overrides: Partial<React.ComponentProps<typeof ScheduleView>> = {}) {
   const props = {
     days: threeDays,
+    spanHours: 3 as const,
     now,
-    focusDayStart: day(25),
-    selectedPeriod: undefined,
+    focusDay: day(25),
+    selectedOrdinal: 7,
     onSelect: vi.fn(),
-    onTakeNote: vi.fn(),
     onOpenNote: vi.fn(),
     onOpenCalendar: vi.fn(),
     onGoToToday: vi.fn(),
@@ -33,6 +34,10 @@ function renderView(overrides: Partial<React.ComponentProps<typeof ScheduleView>
 
   return { ...view, props }
 }
+
+/** The day-level scrolls only: a section is scrolled to its start, a row to the nearest edge. */
+const toDays = (scrollIntoView: ReturnType<typeof vi.fn>) =>
+  scrollIntoView.mock.calls.filter(([options]) => options?.block === 'start')
 
 const section = (dayOfMonth: number) =>
   document.querySelector(`[data-day="${day(dayOfMonth)}"]`) as HTMLElement
@@ -70,20 +75,22 @@ describe('ScheduleView', () => {
 
   // Always offered, whichever day is in view: navigation that appears and disappears is a surprise.
   it('goes to today from the toolbar, on any day', async () => {
-    const { props } = renderView({ focusDayStart: day(24) })
+    const { props } = renderView({ focusDay: day(24) })
 
     await userEvent.click(screen.getByRole('button', { name: 'Go to today' }))
 
     expect(props.onGoToToday).toHaveBeenCalledTimes(1)
   })
 
-  it('does not scroll on mount — that belongs to the selected row', () => {
+  // The day sections still nudge their own selected row into view; what must not happen on mount
+  // is a jump to the top of a day.
+  it('does not scroll a day into view on mount — that belongs to the selected row', () => {
     const scrollIntoView = vi.fn()
     Element.prototype.scrollIntoView = scrollIntoView
 
     renderView()
 
-    expect(scrollIntoView).not.toHaveBeenCalled()
+    expect(toDays(scrollIntoView)).toHaveLength(0)
     Reflect.deleteProperty(Element.prototype, 'scrollIntoView')
   })
 
@@ -92,18 +99,29 @@ describe('ScheduleView', () => {
     Element.prototype.scrollIntoView = scrollIntoView
     const { rerender, props } = renderView()
 
-    rerender(<ScheduleView {...props} focusDayStart={day(26)} />)
+    rerender(<ScheduleView {...props} focusDay={day(26)} />)
 
-    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    expect(toDays(scrollIntoView)).toHaveLength(1)
     Reflect.deleteProperty(Element.prototype, 'scrollIntoView')
   })
 
-  it('gives the selection to the day that holds it, and to no other', () => {
-    renderView({ selectedPeriod: threeDays[2].periods[2] })
+  it('gives the selection to the focus day, and to no other', () => {
+    renderView({ focusDay: day(26), selectedOrdinal: 3 })
 
     const selected = screen.getAllByRole('option', { selected: true })
 
     expect(selected).toHaveLength(1)
     expect(section(26)).toContainElement(selected[0])
+    expect(selected[0]).toHaveAccessibleName('06:00 – 09:00')
+  })
+
+  it('names the day a row belongs to when it is selected or opened', async () => {
+    const { props } = renderView()
+
+    await userEvent.click(within(section(24)).getAllByRole('option')[0])
+    expect(props.onSelect).toHaveBeenCalledWith(day(24), { ordinal: 1, note: null })
+
+    await userEvent.click(within(section(25)).getByRole('button', { name: 'Note' }))
+    expect(props.onOpenNote).toHaveBeenCalledWith(day(25), { ordinal: 7, note: null })
   })
 })

@@ -66,7 +66,7 @@ export class ApiStub {
       this.notesRequests.push(url)
 
       await this.reply(route, (shortName, from, to) =>
-        (this.notes[shortName] ?? []).filter((note) => inWindow(note.occursAt, from, to)),
+        (this.notes[shortName] ?? []).filter((note) => inWindow(note.day, from, to)),
       )
     })
 
@@ -75,7 +75,7 @@ export class ApiStub {
       this.noteDayRequests.push(url)
 
       await this.reply(route, (shortName, from, to) =>
-        noteDaysFor((this.notes[shortName] ?? []).filter((note) => inWindow(note.occursAt, from, to))),
+        noteDaysFor((this.notes[shortName] ?? []).filter((note) => inWindow(note.day, from, to))),
       )
     })
   }

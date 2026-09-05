@@ -14,15 +14,15 @@ timely-notes/
 ├── feature-docs/                  # how work is defined and recorded
 │   ├── WORKFLOW.MD                # the process — read before specifying or implementing
 │   ├── todo/                      # the feature specifications not yet finished
-│   │   ├── NoteAutosave.MD        # next: create-on-open, autosave, POST/PUT
-│   │   └── PlaywrightE2E.MD       # last: the browser acceptance lane
+│   │   └── NoteAutosave.MD        # next: create-on-open, autosave, POST/PUT
 │   └── done/                      # completed specifications, kept as a record
 │       ├── GetNotesBySchedule.MD
 │       ├── FrontendSkeleton.MD
 │       ├── NotesDateRange.MD
 │       ├── LiveClock.MD
 │       ├── ScrollingSchedule.MD
-│       └── CalendarNavigation.MD
+│       ├── CalendarNavigation.MD
+│       └── PlaywrightE2E.MD
 ├── TimelyNotes.Backend/           # ASP.NET Core Web API (.NET 10) — its own solution
 └── timely-notes-ui/               # React + TypeScript frontend (Vite) — its own npm package
 ```
@@ -50,9 +50,13 @@ The two projects are wired together only by a **Vite dev proxy** (`/api` → `ht
 
 **Frontend — three days at a time, a live clock, and a month calendar to move between them.** The app shows the focus day and its two neighbours as day sections in one scroll container (the page itself never scrolls), fetches through the Vite dev proxy, and opens both new and existing notes in a `NoteDialog` wrapping `NoteEditor`. The window never grows: three contiguous days is one request, and a navigation toolbar — *Calendar* and *Go to today* — sits above the scroller and never scrolls away. *Calendar* opens a `CalendarDialog`, a Monday-first month grid marked from the `note-days` route, which re-points the view at any day picked. `useNow` ticks on the minute and resyncs on visibility/focus, so the current-period marker moves and an untouched view rolls over at midnight; a view the user has committed to stays put, and a notice says so whenever the focus day is not the current one. Save still only `console.log`s the markdown and the note's `occursAt` — there is no create/update endpoint. There is no router and no state management library; the selected Schedule, what the user has pinned and the month on show are React state in `App.tsx`. Vitest + React Testing Library are set up and the slice is covered by tests.
 
+**There is also a browser acceptance layer.** 221 Vitest tests cover the units; on top of them sit 59 Playwright specs in the hermetic `stubbed` lane and 4 in the opt-in `integrated` one, covering the journeys and the three things jsdom simulates away — the native `<dialog>`'s modality and its Escape path, real layout (row proportionality, the mount-time scroll into view, a toolbar that stays put), and MDXEditor's typing, toolbar and markdown shortcuts.
+
 ## Development approach
 
 We use **Test Driven Development** in both the API and the UI: write a failing test first, then the minimum code to pass it, then refactor. This applies to all new domain code (models, endpoints, components, hooks, etc.), not just bug fixes. The backend has xUnit set up and the frontend has Vitest + React Testing Library.
+
+**The two frontend suites answer different questions, and they run in that order.** TDD the feature with Vitest first — failing unit test, code, refactor — and only once it is implemented, add or extend the Playwright spec covering the journey it added. Vitest answers *is this unit correct*, during construction; Playwright answers *does the assembled app do what the specification promised the user*, once it is built. Playwright is never a substitute for a unit test and is not run during the TDD loop: a behaviour that a unit test can pin down is pinned down by a unit test. When an acceptance spec fails, the fix normally starts with a new failing **unit** test — the acceptance spec reports the symptom, the TDD loop deals with the cause.
 
 ## Code style
 
@@ -100,7 +104,8 @@ We use **Test Driven Development** in both the API and the UI: write a failing t
 - `npm run build` — type-check (`tsc -b`) and build (`vite build`)
 - `npm run lint` — ESLint (flat config in `eslint.config.js`; basic, non-type-aware rules)
 - `npm run preview` — preview a production build
-- `npm test` — Vitest once (`npm run test:watch` to watch). Config lives in `vite.config.ts` (`jsdom`, globals on, `src/test/setup.ts`), which also stubs `HTMLDialogElement.showModal`/`close` since jsdom doesn't implement them. Tests sit next to the code they cover as `*.test.ts(x)`.
+- `npm test` — Vitest once (`npm run test:watch` to watch). Config lives in `vite.config.ts` (`jsdom`, globals on, `src/test/setup.ts`), which also stubs `HTMLDialogElement.showModal`/`close` since jsdom doesn't implement them. Tests sit next to the code they cover as `*.test.ts(x)`. Vitest's `include` is scoped to `src/`: `e2e/` is Playwright's, and its `test()` refuses to run under any other runner.
+- `npm run test:e2e` — the Playwright acceptance suite, stubbed lane, headless. `test:e2e:integrated` runs the lane that needs the API; `test:e2e:ui` and `test:e2e:debug` are for a human and are never on the default path.
 
 **`vite.config.ts` proxies `/api` to `http://localhost:5186`**, so the UI calls the backend same-origin and no CORS config is needed. Dev-only — there is no production API base URL yet.
 
@@ -137,5 +142,16 @@ We use **Test Driven Development** in both the API and the UI: write a failing t
 **A new note's `occursAt` is the client's, stamped when the dialog opens.** `occursAtFor(period, now)` in `domain/notes.ts` is `now` for the live slot (so the row reads `09:47`, not `09:00`) and `period.start` for any other. `App.handleTakeNote` computes it with `readNow()`, not the ticked `now`, and holds it in the dialog state — a note begun at 23:58 and finished at 00:03 belongs to the 23:00 slot, and `occursAt` is immutable. `createdAt`/`modifiedAt` stay the server's and are never sent.
 
 **Markdown editing uses `@mdxeditor/editor`.** `NoteEditor` is a `forwardRef` wrapper exposing `MDXEditorMethods` (so a parent reads the markdown via `ref.current.getMarkdown()`) and configures the plugin list and toolbar. Add editor features by extending that plugin list rather than dropping a second editor in. `@mdxeditor/editor/style.css` is imported inside the component.
+
+**Playwright lives in `e2e/`, in two lanes.** `playwright.config.ts` defines both over Chromium only. **`stubbed`** is the default and is hermetic: every `/api/**` request is fulfilled from a fixture, so it needs no backend and no .NET SDK, and it is the lane to run while iterating on a UI change. **`integrated`** (`grep: /@integrated/`, `e2e/backend.spec.ts`) runs the same app against the real API through the real Vite proxy, and holds only the assertions that are *about* the two projects agreeing — the window format is accepted, the seeded notes render, the counts route answers. Keep it small; it is the slow lane.
+
+- **Layout:** `e2e/fixtures/notes.ts` (wire-shaped fixtures), `e2e/fixtures/ScheduleView.ts` (the page object), `e2e/fixtures/app.ts` (the extended `test`), and one spec file per area.
+- **`npx playwright install chromium` is a one-off, out-of-tree download** an agent needs before its first run. Without it every spec fails at launch with *"Executable doesn't exist at …\\ms-playwright\\chromium…"*, naming the command to run.
+- **The clock is frozen at 20:20 on 25/08/2026** — the instant the `FrontendSkeleton` mockup is drawn at — and the timezone is pinned to `Europe/London` with `en-GB`. `page.clock.install()` runs **before** the first navigation and `pauseAt()` the moment the page is up; installing it behind the frozen instant leaves margin for the load, and pausing before the load strands it on timers that can no longer fire. `install()` + `pauseAt()`, never `setFixedTime` — the rollover journey fast-forwards, which needs an installed clock.
+- **A pinned timezone means an E2E spec may assert a literal URL** (`2026-08-24T00:00:00+01:00`), unlike the unit tests, which must assert structurally to pass anywhere. `api-contract.spec.ts` re-runs one spec under `Pacific/Auckland` to keep the offset logic honest.
+- **The page object exposes locators, not assertions**, all by ARIA role and accessible name — the same handles the Vitest suite uses, so breaking a row's accessibility breaks both suites. The scroll container is the one exception and is reached by its `data-testid`. Three days render at once, so **every per-day handle goes through `day(heading)`** and every row count is per day: an unscoped `getByRole('option')` matches the same slot three times over and fails strict mode.
+- **The `api` fixture stubs two routes, not one** — `**/api/schedules/*/notes*` *and* `**/api/schedules/*/note-days*`, since `notes*` does not match `note-days`. It records what the browser actually asked for, which is a stronger statement about `notesApi.ts` than a `fetch` mock. Count requests through `notesWindows`/`noteDayWindows`, which de-duplicate: `StrictMode` runs an effect twice, and what the specs assert is that no render or clock tick asks for a *new* window.
+- **The stubbed lane is served from `npm run build && npm run preview` on `127.0.0.1:5174`**, not the dev server on 5173 — a build so a cold context does not re-transform the editor's module graph per test, `5174` so a run never collides with a developer's own server, and the literal `127.0.0.1` because `localhost` resolves to `::1` here and the mismatch stalls navigation. `workers` is pinned to 2: every worker loads the editor bundle cold, and a wider fan-out starves the preview server.
+- **Reporter is `[['list']]`.** Never make the HTML reporter the default — `playwright show-report` starts a server and blocks the terminal, stranding an agent mid-task.
 
 `README.md` in this folder is still the stock Vite template text.

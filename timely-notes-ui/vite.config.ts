@@ -15,5 +15,8 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: './src/test/setup.ts',
+    // Vitest owns `src/`; `e2e/` is Playwright's, and its `test()` refuses to run under any other
+    // runner. Unit tests sit beside the code they cover, so nothing of ours lives outside `src/`.
+    include: ['src/**/*.test.{ts,tsx}'],
   },
 })

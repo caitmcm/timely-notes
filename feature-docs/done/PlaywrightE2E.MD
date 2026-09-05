@@ -267,33 +267,36 @@ buckets; the E2E column is what §3–§8 implement.
 
 ### 1. Tooling and configuration (prerequisite)
 
-- [ ] Add `@playwright/test` as a dev dependency of `timely-notes-ui`.
-- [ ] Install the Chromium browser (`npx playwright install chromium`) and record in the
+- [x] Add `@playwright/test` as a dev dependency of `timely-notes-ui`.
+- [x] Install the Chromium browser (`npx playwright install chromium`) and record in the
       implementation notes that this is a one-off, out-of-tree download an agent needs before the
       first run — and what the failure looks like when it is missing.
-- [ ] Add `playwright.config.ts`: `testDir: './e2e'`, Chromium only, `timezoneId: 'Europe/London'`,
+- [x] Add `playwright.config.ts`: `testDir: './e2e'`, Chromium only, `timezoneId: 'Europe/London'`,
       `locale: 'en-GB'`, `reporter: [['list']]`, `forbidOnly: !!process.env.CI`,
       `retries: process.env.CI ? 2 : 0`, and `trace`/`screenshot` on first retry only.
-- [ ] `webServer` starts the Vite dev server on **5174** with `--strictPort`, with
+- [x] `webServer` starts the Vite dev server on **5174** with `--strictPort`, with
       `reuseExistingServer: !process.env.CI`. Confirm a run passes while a developer's own 5173
-      server is up, so the two never fight over a port.
-- [ ] Two projects: `stubbed` (default, excludes `@integrated`) and `integrated`
+      server is up, so the two never fight over a port. *(Serves a **build** on
+      `127.0.0.1:5174` rather than the dev server, and the address is the literal IPv4 loopback —
+      both changes are load-bearing; see the notes. Confirmed green with a developer's 5173 server
+      running.)*
+- [x] Two projects: `stubbed` (default, excludes `@integrated`) and `integrated`
       (`grep: /@integrated/`) — see §8 for the latter's server wiring.
-- [ ] `package.json` scripts: `test:e2e` (stubbed only, headless), `test:e2e:ui` (`--ui`, for a
+- [x] `package.json` scripts: `test:e2e` (stubbed only, headless), `test:e2e:ui` (`--ui`, for a
       human), `test:e2e:integrated`, `test:e2e:debug`.
-- [ ] Add `test-results/`, `playwright-report/` and `blob-report/` to `timely-notes-ui/.gitignore`.
-- [ ] Keep `tsc -b` and `npm run lint` clean over `e2e/` — extend the `tsconfig`/ESLint coverage to
+- [x] Add `test-results/`, `playwright-report/` and `blob-report/` to `timely-notes-ui/.gitignore`.
+- [x] Keep `tsc -b` and `npm run lint` clean over `e2e/` — extend the `tsconfig`/ESLint coverage to
       the folder rather than excluding it, so the specs are type-checked like the rest of the app.
-- [ ] Sanity spec: load the app and assert the `Timely Notes` heading. Confirm `npm run test:e2e`
+- [x] Sanity spec: load the app and assert the `Timely Notes` heading. Confirm `npm run test:e2e`
       goes green from a cold start and exits without leaving a server or a report listening.
 
 ### 2. Harness — fixtures, clock, network (prerequisite)
 
-- [ ] `e2e/fixtures/notes.ts`: wire-shaped fixtures per short name, mirroring `App.test.tsx` —
+- [x] `e2e/fixtures/notes.ts`: wire-shaped fixtures per short name, mirroring `App.test.tsx` —
       `occursAt` on 25/08/2026, `createdAt` on 28/08/2026, ISO strings with an offset. Include a
       note whose content is markdown (`# Stand-up\n\nBlocked.`) so the excerpt and the rendered
       heading can both be asserted, and two notes in one period so ordering can be.
-- [ ] `e2e/fixtures/app.ts`: extend `test` with a `page` that fixes the clock at 20:20 on
+- [x] `e2e/fixtures/app.ts`: extend `test` with a `page` that fixes the clock at 20:20 on
       25/08/2026 **before** the first navigation.
   - Since `LiveClock.MD`, the app has no single mount-time `new Date()`: `useNow` ticks on the
     minute and resyncs on visibility and focus. The requirement is therefore that the clock is
@@ -302,39 +305,39 @@ buckets; the E2E column is what §3–§8 implement.
     needs an installed clock, so the choice is already forced. Prove the freeze with a spec that
     would fail on a wall-clock read. Under a paused clock the app never ticks, so the stubbed lane's
     behaviour table is otherwise unchanged.
-- [ ] `api` fixture over **both** `page.route('**/api/schedules/*/notes*')` and
+- [x] `api` fixture over **both** `page.route('**/api/schedules/*/notes*')` and
       `page.route('**/api/schedules/*/note-days*')`: records intercepted requests, replies from the
       fixtures by short name, and can be told to reply with a given status or after a delay.
       Register both routes before `goto`, so the mount-time fetch is caught. The second pattern is
       not optional — `notes*` does not match `note-days`, and §5b cannot assert on counts without
       it.
-- [ ] Day-count fixtures in `{ day, count }` wire shape (`day` an offset-carrying instant at local
+- [x] Day-count fixtures in `{ day, count }` wire shape (`day` an offset-carrying instant at local
       midnight, as `NoteDayResponse` serialises), covering the August 2026 grid: a marked day, a day
       with two notes, and an unmarked day, so §5b can assert markers and their absence.
-- [ ] `e2e/fixtures/ScheduleView.ts`: locators only, all by ARIA role and accessible name (bar the
+- [x] `e2e/fixtures/ScheduleView.ts`: locators only, all by ARIA role and accessible name (bar the
       scroll container's `data-testid`), matching the handles the Vitest suite uses, and scoped per
       day via `day(heading)` as **The harness** describes.
-- [ ] All three fixtures are exercised by at least one spec in §3 before this section is ticked.
+- [x] All three fixtures are exercised by at least one spec in §3 before this section is ticked.
 
 ### 3. Day view — `e2e/day-view.spec.ts`
 
 Every row assertion here is scoped to `day('25/08/2026')` unless it says otherwise.
 
-- [ ] Three days render — `24/08/2026`, `25/08/2026` and `26/08/2026`, in that order — with the
+- [x] Three days render — `24/08/2026`, `25/08/2026` and `26/08/2026`, in that order — with the
       focus day in view.
-- [ ] `3h` renders 8 rows **in each day**, and the focus day's gutter reads `00:00` … `21:00` in
+- [x] `3h` renders 8 rows **in each day**, and the focus day's gutter reads `00:00` … `21:00` in
       order. (24 rows on the page; assert per day, not per page.)
-- [ ] Exactly one row **on the page** carries `aria-current="time"`, it is `18:00 – 21:00`, and it
+- [x] Exactly one row **on the page** carries `aria-current="time"`, it is `18:00 – 21:00`, and it
       is inside `25/08/2026` — the neighbouring days hold no current row.
-- [ ] Seeded notes render in the row their `occursAt` falls in, though their `createdAt` is 28/08.
-- [ ] A note whose `occursAt` is on 26/08 renders in *that* day's section, not the focus day's —
+- [x] Seeded notes render in the row their `occursAt` falls in, though their `createdAt` is 28/08.
+- [x] A note whose `occursAt` is on 26/08 renders in *that* day's section, not the focus day's —
       the three-day equivalent of the unit suite's "day it occurs on, not the day in view".
-- [ ] Two notes in one period list oldest-first.
-- [ ] A note button is labelled with its time and a one-line excerpt (`19:30 Stand-up`).
-- [ ] A period with no notes contains no buttons.
-- [ ] `Loading notes…` is shown while a delayed reply is in flight, and is gone once it lands. It
+- [x] Two notes in one period list oldest-first.
+- [x] A note button is labelled with its time and a one-line excerpt (`19:30 Stand-up`).
+- [x] A period with no notes contains no buttons.
+- [x] `Loading notes…` is shown while a delayed reply is in flight, and is gone once it lands. It
       appears in **each** of the three day sections, since one request covers them all.
-- [ ] A 500 shows the error alert and still renders the 8 rows per day.
+- [x] A 500 shows the error alert and still renders the 8 rows per day.
 
 ### 4. Selection and keyboard — `e2e/selection.spec.ts`
 
@@ -342,22 +345,22 @@ Rows exist on all three days, so every click here names the day as well as the r
 `day('25/08/2026').row('06:00 – 09:00')`. An unscoped `getByRole('option', { name })` is ambiguous
 and will fail with a strict-mode violation.
 
-- [ ] On load, `18:00 – 21:00` on 25/08 is the selected row and holds the only `Note` button on the
+- [x] On load, `18:00 – 21:00` on 25/08 is the selected row and holds the only `Note` button on the
       page — the neighbouring days hold none.
-- [ ] Clicking `06:00 – 09:00` on 25/08 moves both the selection and the button there, and opens no
+- [x] Clicking `06:00 – 09:00` on 25/08 moves both the selection and the button there, and opens no
       dialog.
-- [ ] `aria-current="time"` stays on `18:00 – 21:00` after the selection moves.
-- [ ] Clicking a row on **26/08** moves the selection onto that day, and 25/08 then holds no
+- [x] `aria-current="time"` stays on `18:00 – 21:00` after the selection moves.
+- [x] Clicking a row on **26/08** moves the selection onto that day, and 25/08 then holds no
       selected row — the selection is page-wide, not per day.
-- [ ] Clicking a note inside an **unselected** row opens that note without moving the selection.
-- [ ] Pressing `Note` opens the dialog without changing which row is selected.
-- [ ] Tabbing to a row and pressing `Enter` selects it. **New coverage** — `PeriodRow`'s key handler
+- [x] Clicking a note inside an **unselected** row opens that note without moving the selection.
+- [x] Pressing `Note` opens the dialog without changing which row is selected.
+- [x] Tabbing to a row and pressing `Enter` selects it. **New coverage** — `PeriodRow`'s key handler
       has no unit test.
-- [ ] Pressing `Space` on a focused row selects it and does not scroll the page — assert
+- [x] Pressing `Space` on a focused row selects it and does not scroll the page — assert
       `window.scrollY` is unchanged, which is what the handler's `preventDefault` is for.
-- [ ] Pressing `Enter` while focus is on a button inside a row does not re-select it (the
+- [x] Pressing `Enter` while focus is on a button inside a row does not re-select it (the
       `event.target === event.currentTarget` guard).
-- [ ] **Midnight rollover** (`page.clock.fastForward` past 00:00, stubbed lane only, so the fixture
+- [x] **Midnight rollover** (`page.clock.fastForward` past 00:00, stubbed lane only, so the fixture
       window can move with the view). An untouched view follows: the three days become
       `25`–`27/08/2026`, the selection lands on `00:00 – 03:00` on 26/08, and **one** further
       request is made — for the single new day `[27/08, 28/08)`, since the other two are cached. A
@@ -372,86 +375,90 @@ and will fail with a strict-mode violation.
 
 ### 5. Schedule switching and the API contract — `e2e/schedule.spec.ts`, `e2e/api-contract.spec.ts`
 
-- [ ] Switching to `6h` leaves `6h` pressed, `3h` not, and 4 rows **per day**; `1h` gives 24 per day
+- [x] Switching to `6h` leaves `6h` pressed, `3h` not, and 4 rows **per day**; `1h` gives 24 per day
       (12 and 72 on the page).
-- [ ] Switching schedule issues exactly one further request, for the new short name — two requests
+- [x] Switching schedule issues exactly one further request, for the new short name — two requests
       in total after one switch, not one per render.
-- [ ] After switching to `1h`, the selection re-anchors to `20:00 – 21:00`.
-- [ ] Switching schedule while a dialog is open closes it.
-- [ ] The mount request asks for `searchFrom=2026-08-24T00:00:00+01:00` and
+- [x] After switching to `1h`, the selection re-anchors to `20:00 – 21:00`.
+- [x] Switching schedule while a dialog is open closes it. *(Unreachable from a browser: the modal
+      `<dialog>` swallows the click at the picker. Asserted as that modality instead — see the notes.)*
+- [x] The mount request asks for `searchFrom=2026-08-24T00:00:00+01:00` and
       `searchTo=2026-08-27T00:00:00+01:00` — a three-day, half-open window around the frozen day.
-- [ ] The raw query string carries the offset percent-encoded (`%2B01:00`), so the `+` cannot be
+- [x] The raw query string carries the offset percent-encoded (`%2B01:00`), so the `+` cannot be
       read as a space.
-- [ ] The same spec under a UTC+12 timezone override sends `+12:00` and that zone's *local*
+- [x] The same spec under a UTC+12 timezone override sends `+12:00` and that zone's *local*
       midnights — the browser-level stand-in for the structural assertions the unit tests make.
-- [ ] The path is `/api/schedules/{shortName}/notes`, same-origin.
+- [x] The path is `/api/schedules/{shortName}/notes`, same-origin.
 
 ### 5b. Calendar navigation — `e2e/calendar.spec.ts`
 
 Replaces the scroll-growth journey `ScrollingSchedule.MD` asked for: the view is bounded now, and
 the calendar is how the user goes anywhere else (`CalendarNavigation.MD`).
 
-- [ ] The navigation toolbar — `Calendar` then `Go to today` — is above the scroll container and
+- [x] The navigation toolbar — `Calendar` then `Go to today` — is above the scroll container and
       outside it, and both buttons stay visible while the days are scrolled end to end.
-- [ ] Scrolling the container to either end adds no fourth day and issues no request; the
+- [x] Scrolling the container to either end adds no fourth day and issues no request; the
       container's `scrollHeight` is unchanged after the scroll.
-- [ ] `Calendar` opens a modal month grid headed `August 2026`, and it is genuinely modal.
-- [ ] The grid is Monday-first whole weeks, the days outside August are dimmed but still enabled,
+- [x] `Calendar` opens a modal month grid headed `August 2026`, and it is genuinely modal.
+- [x] The grid is Monday-first whole weeks, the days outside August are dimmed but still enabled,
       and 25/08 carries `aria-current="date"`.
-- [ ] The grid asks `/api/schedules/s3/note-days` exactly once, for the whole grid, and not at all
+- [x] The grid asks `/api/schedules/s3/note-days` exactly once, for the whole grid, and not at all
       before it is opened.
-- [ ] Seeded days carry a marker; days with no notes do not.
-- [ ] `Previous month` shows `July 2026` and issues exactly one further count request; going back
+- [x] Seeded days carry a marker; days with no notes do not.
+- [x] `Previous month` shows `July 2026` and issues exactly one further count request; going back
       to August issues none.
-- [ ] Picking a seeded day closes the calendar, renders that day and its two neighbours with their
+- [x] Picking a seeded day closes the calendar, renders that day and its two neighbours with their
       notes, selects that day's **first** period, and issues exactly **one** notes request, with
       nothing asked for in between. Choose a target far enough from 25/08 that the window shares no
       day with the one already cached, so the request really is the whole three days — the cache
       legitimately trims a window that overlaps what it holds, which would make a "three days
       exactly" assertion wrong rather than the app.
-- [ ] The jump raises the `It is now 25/08/2026.` notice; pressing `Go to today` in the toolbar
+- [x] The jump raises the `It is now 25/08/2026.` notice; pressing `Go to today` in the toolbar
       returns to the current three days and the notice goes. The button itself is present
       throughout — assert the *notice* appearing, never the button.
-- [ ] Picking the current day from the grid is `Go to today`: the view returns to the current three
+- [x] Picking the current day from the grid is `Go to today`: the view returns to the current three
       days and the selection lands on the current period, not on `00:00`.
-- [ ] `Escape` closes the calendar and leaves the view where it was.
+- [x] `Escape` closes the calendar and leaves the view where it was.
 
 ### 6. The note dialog and the editor — `e2e/note-dialog.spec.ts`
 
-- [ ] `Note` opens a modal headed with the selected period's range, with an empty editor.
-- [ ] Clicking an existing note opens the dialog headed with **that** period's range, with the
+- [x] `Note` opens a modal headed with the selected period's range, with an empty editor.
+- [x] Clicking an existing note opens the dialog headed with **that** period's range, with the
       note's markdown **rendered** — `# Stand-up` present as a heading element, not just as text.
-- [ ] The dialog is genuinely modal: focus is inside it, and a row behind it cannot be clicked.
+- [x] The dialog is genuinely modal: focus is inside it, and a row behind it cannot be clicked.
       **New coverage** — jsdom stubs `showModal`, so modality has never been executed.
-- [ ] `Escape` closes the dialog. **New coverage** — `NoteDialog`'s `onCancel` path is dead code as
+- [x] `Escape` closes the dialog. **New coverage** — `NoteDialog`'s `onCancel` path is dead code as
       far as the current suite knows.
-- [ ] `Cancel` closes the dialog and emits nothing on the console.
-- [ ] `Save` closes the dialog and emits the editor's markdown on the console.
-- [ ] Typing into a blank editor and pressing `Save` emits what was typed. **New coverage.**
-- [ ] Selecting text and pressing the `Bold` toolbar button emits `**…**`. **New coverage.**
-- [ ] Typing `# ` at the start of a line makes a heading, and `Save` emits `# …`
+- [x] `Cancel` closes the dialog and emits nothing on the console.
+- [x] `Save` closes the dialog and emits the editor's markdown on the console.
+- [x] Typing into a blank editor and pressing `Save` emits what was typed. **New coverage.**
+- [x] Selecting text and pressing the `Bold` toolbar button emits `**…**`. **New coverage.**
+- [x] Typing `# ` at the start of a line makes a heading, and `Save` emits `# …`
       (`markdownShortcutPlugin`). **New coverage.**
-- [ ] Opening an existing note, cancelling, then pressing `Note` gives an empty editor — the
+- [x] Opening an existing note, cancelling, then pressing `Note` gives an empty editor — the
       remount-per-note `key`, proven against a real editor instance.
 
 ### 7. Layout — `e2e/layout.spec.ts`
 
 Everything here is unreachable in jsdom; none of it is derived from a unit test.
 
-- [ ] At `1h`, all 24 rows of a day fit inside that day's period list — none overflows past the day
+- [x] At `1h`, all 24 rows of a day fit inside that day's period list — none overflows past the day
       boundary. Measure one day section, not the scroll container, which holds three.
-- [ ] A `6h` row's height is six times a `1h` row's, within a pixel of tolerance, and the period
+- [x] A `6h` row's height is six times a `1h` row's, within a pixel of tolerance, and the period
       list's total height is the same under both — the proportionality `App.css` is built around.
       `--day-height` is per day, so this holds for each of the three.
-- [ ] At `1h`, the selected row is inside the viewport after load, from a viewport short enough that
+- [x] At `1h`, the selected row is inside the viewport after load, from a viewport short enough that
       it would otherwise be below the fold. This is the only test `DaySection`'s mount-time
       `scrollIntoView` will ever have — the mount scroll belongs to `DaySection` and the selected
       row; `ScheduleView`'s own effect fires only when the **focus day changes**, and is covered by
       §5b's calendar jump.
-- [ ] The navigation toolbar does not move when the days are scrolled — its `boundingBox()` is
+- [x] The navigation toolbar does not move when the days are scrolled — its `boundingBox()` is
       unchanged before and after, which is what putting it outside the scroll container buys.
-- [ ] The selected row is distinguishable by more than colour — assert the accessible marker
+- [x] The selected row is distinguishable by more than colour — assert the accessible marker
       (`aria-selected`) and read the computed border to confirm the non-colour cue is present.
+      *(The border is **not** a non-colour cue: `.period-row` reserves the same 3px left border on
+      every row and only recolours it. The `Note` button is the cue that survives, and is what the
+      spec asserts — see the notes.)*
 
 ### 8. The integrated lane — `e2e/backend.spec.ts` (`@integrated`)
 
@@ -465,57 +472,59 @@ never fast-forward across midnight: the UI would roll to a day whose seeded note
 the seed happens to span ± 3 days, making the assertion accidental. The rollover journey belongs to
 the stubbed lane (§4).
 
-- [ ] Confirm a readiness URL for the API's `webServer` (`/swagger/index.html` under the `http`
+- [x] Confirm a readiness URL for the API's `webServer` (`/swagger/index.html` under the `http`
       launch profile) and record what was used. The notes route needs query parameters, so it is not
       usable as a health check; if nothing suitable answers a bare GET, say so in the notes.
-- [ ] `webServer` for this project starts `dotnet run --project TimelyNotes.API --launch-profile http`
+- [x] `webServer` for this project starts `dotnet run --project TimelyNotes.API --launch-profile http`
       from `TimelyNotes.Backend/` alongside Vite on its default port, mirroring `run-dev.ps1`, with
       `reuseExistingServer` so a developer's running stack is used instead of a second one.
-- [ ] The app loads against the real API with no console errors and no error alert — the proxy, the
+- [x] The app loads against the real API with no console errors and no error alert — the proxy, the
       query string and the response shape all agree.
-- [ ] The request the UI sends is answered `200`, not `400` by `GetNotesByScheduleValidator` — the
+- [x] The request the UI sends is answered `200`, not `400` by `GetNotesByScheduleValidator` — the
       one assertion that catches the two projects disagreeing about the window format.
-- [ ] Today's seeded `s3` notes appear in their periods; switching to `s1` and `s6` shows theirs.
+- [x] Today's seeded `s3` notes appear in their periods; switching to `s1` and `s6` shows theirs.
       Assert on note **content**, never on ids: the seed mints a fresh `Guid` per process.
-- [ ] Opening a seeded note shows its content in the editor.
-- [ ] Opening the calendar marks the seeded days: the real `note-days` route answers `200`, and the
+- [x] Opening a seeded note shows its content in the editor.
+- [x] Opening the calendar marks the seeded days: the real `note-days` route answers `200`, and the
       grid carries markers on today and its neighbours (the seed spans today ± 3). Assert that
       *some* marked day exists and that today is one, never an exact set — the seed is anchored to
       the API process's `DateTime.Today` and the month grid's edges move with the calendar. This is
       the only integrated assertion covering the counts route, and it exists because the offset
       grouping is exactly the kind of thing the two projects can silently disagree about.
-- [ ] Record in the notes how long this lane takes to start, so its cost against the stubbed lane is
+- [x] Record in the notes how long this lane takes to start, so its cost against the stubbed lane is
       on the record.
 
 ### 9. Making the suite usable by an agent
 
-- [ ] `npm run test:e2e` is headless, needs no .NET SDK, and prints a plain list an agent can read.
-- [ ] No command on the default path opens a browser window or leaves a server listening.
-- [ ] A failure names the spec, the failing assertion and the file/line — check by breaking one
+- [x] `npm run test:e2e` is headless, needs no .NET SDK, and prints a plain list an agent can read.
+- [x] No command on the default path opens a browser window or leaves a server listening.
+- [x] A failure names the spec, the failing assertion and the file/line — check by breaking one
       assertion deliberately and reading the output as an agent would.
-- [ ] Update the **Frontend** section of `CLAUDE.md`: the `e2e/` layout, the two lanes and when to
+- [x] Update the **Frontend** section of `CLAUDE.md`: the `e2e/` layout, the two lanes and when to
       use each, the frozen clock and pinned timezone, the fixture/page-object conventions, and the
       one-off browser install.
-- [ ] State the ordering rule in `CLAUDE.md` beside the existing TDD paragraph, in the words of
+- [x] State the ordering rule in `CLAUDE.md` beside the existing TDD paragraph, in the words of
       **Where the two suites sit in the feature loop** above: TDD the feature with Vitest first —
       failing unit test, code, refactor — and only once it is implemented, add or extend the
       Playwright spec covering the journey. Playwright is not a substitute for a unit test and is
       not run during the TDD loop; a failing acceptance spec is normally fixed by starting a new
       unit test, not by patching until the browser goes green.
-- [ ] Update the **Current state** section of `CLAUDE.md` once the suite is green.
+- [x] Update the **Current state** section of `CLAUDE.md` once the suite is green.
 
 ## Verify
 
-- [ ] `npm test` — the existing 221 Vitest tests still pass, unchanged.
-- [ ] `npm run build` and `npm run lint` are clean, with `e2e/` included in both.
-- [ ] `npm run test:e2e` passes from a cold start with no backend running, and again with a
+- [x] `npm test` — the existing 221 Vitest tests still pass, unchanged.
+- [x] `npm run build` and `npm run lint` are clean, with `e2e/` included in both.
+- [x] `npm run test:e2e` passes from a cold start with no backend running, and again with a
       developer's own dev server already up on 5173.
-- [ ] Spot-check that the suite can actually fail: break one assertion and one line of app code,
+- [x] Spot-check that the suite can actually fail: break one assertion and one line of app code,
       confirm the relevant specs go red, then restore. Ordinary hygiene for acceptance tests written
       against working code — a suite that has only ever been green proves nothing yet.
-- [ ] With the stack up (`./run-dev.ps1`), `npm run test:e2e:integrated` passes.
-- [ ] `npm run test:e2e:ui` opens the Playwright UI for a human, and is never on the default path.
-- [ ] Record the final counts and the wall-clock time of each lane in the implementation notes.
+- [x] With the stack up (`./run-dev.ps1`), `npm run test:e2e:integrated` passes.
+- [x] `npm run test:e2e:ui` opens the Playwright UI for a human, and is never on the default path.
+      *(Confirmed by hand: `--ui` opens a window and blocks the terminal, so it is the one check an
+      agent must not run itself. Nothing in the default path reaches it.)*
+- [x] Record the final counts and the wall-clock time of each lane in the implementation notes.
 
 ## Deferred
 
@@ -536,4 +545,98 @@ the stubbed lane (§4).
 
 ## Implementation notes
 
-_Left empty at specification time — the implementing agent fills this in._
+### Counts and timings
+
+| Lane | Specs | Wall clock |
+| --- | --- | --- |
+| Vitest (`npm test`) | 221 in 17 files | ~7.5s |
+| Playwright `stubbed` (`npm run test:e2e`) | 59 in 7 files | ~17s, of which ~6s is the build |
+| Playwright `integrated` (`npm run test:e2e:integrated`) | 4 in 1 file | ~14s cold (Playwright starts both servers), ~3s against a stack already up |
+
+`npm run build` is ~1s and `npm run lint` under 5s. The whole verification pass is well under a
+minute, which is the point: an agent can afford to run it.
+
+### The one-off browser download
+
+`npx playwright install chromium` (~140 MB, into `%LOCALAPPDATA%\ms-playwright`) is needed once per
+machine, out of tree, and is **not** done by `npm install`. Without it every spec fails at launch
+with `Error: browserType.launch: Executable doesn't exist at …\ms-playwright\chromium_headless_shell-…`,
+and the message names the command to run — so the failure is self-explaining, which is why nothing
+was added to paper over it.
+
+### Deviations from the specification
+
+- **The stubbed lane serves a build, not the dev server.** §1 asked for `npm run dev -- --port 5174`.
+  It runs `npm run build && npm run preview -- --host 127.0.0.1 --port 5174 --strictPort` instead:
+  every test gets a fresh browser context with an empty cache, and re-transforming MDXEditor's module
+  graph per test made a cold load take about twenty seconds. Nothing in this lane needs the dev proxy
+  — every `/api` request is intercepted — so the build costs one ~6s compile per run and saves far
+  more. The integrated lane still uses the dev server, because it needs the proxy.
+- **`127.0.0.1`, not `localhost`.** Vite binds to `localhost`, which resolves to `::1` on this
+  machine; Chromium's IPv4 attempt then stalled the navigation rather than failing fast, and
+  `page.goto` timed out at 30s under any parallelism. Binding and addressing the literal IPv4 loopback
+  removed it entirely. Worth remembering: the dev server on 5173 listens on `[::1]` only.
+- **`workers` is pinned to 2.** The default (one per two cores — ten here) starved the preview server:
+  2m20s and mass `goto` timeouts. Two workers finish the same 59 specs in ~9s, and *faster* than one.
+  This is the kind of thing a stubbed lane hides until the suite is large enough to notice.
+- **The clock is installed ten minutes behind the frozen instant**, not one second. The original
+  one-second lead meant any page load slower than a second made `clock.pauseAt` throw
+  `Cannot fast-forward to the past` — which is what 19 of the first 23 specs were failing on. The
+  clock runs at wall speed only between `install()` and the `pauseAt()` that follows `goto`, so the
+  lead is margin for the load, never a wait.
+- **Vitest's `include` is now scoped to `src/`.** It was collecting `e2e/**` and failing seven files
+  with `Playwright Test did not expect test() to be called here` — `npm test` reported
+  `7 failed | 17 passed` while still saying `221 passed`, which is exactly the kind of green-looking
+  red an agent skims past.
+- **`react-hooks/rules-of-hooks` is off for `e2e/`.** A Playwright fixture's `use(value)` handoff is
+  not React's `use`, but the rule matches on the name alone and raised six errors.
+- **§5's "switching schedule while a dialog is open closes it" is unreachable from a browser.** The
+  modal `<dialog>` intercepts the click before it reaches the picker — Playwright reports
+  `<dialog open class="note-dialog"> intercepts pointer events` and never lands it.
+  `handleScheduleChange`'s `closeDialog()` is a defensive branch only a unit test can drive, so the
+  spec asserts the modality that makes it unreachable instead.
+- **§7's "distinguishable by more than colour" could not be asserted from the border.** `.period-row`
+  gives *every* row the same `3px solid transparent` left border and `.period-row--selected` only
+  recolours it; the background change is colour too. The cue that survives a monochrome screen is the
+  `Note` button appearing in the selected row, and that is what the spec asserts alongside
+  `aria-selected`. **This is a real finding for the deferred `@axe-core` audit**, not a test problem:
+  a user who cannot distinguish the accent from the surface has only the button to go on.
+
+### Things worth knowing before extending the suite
+
+- **A 6h row is six times a 1h row only for rows that carry a top border.** `.period-row:first-child`
+  drops its, so comparing the *first* row of each schedule is out by 5px. `layout.spec.ts` measures
+  `nth(1)`.
+- **`DaySection`'s mount-time `scrollIntoView` can only be observed at `3h`.** Day sections are keyed
+  by `dayStart`, so a schedule change does not remount them, and the app always loads at the default
+  schedule — there is no way to reach a first paint at `1h`. §7's scroll-into-view spec therefore
+  runs at `3h` on a 520px-tall viewport, where the selected `18:00 – 21:00` row still sits over a
+  thousand pixels down the column. The mechanism under test is identical.
+- **Count requests through `notesWindows`/`noteDayWindows`, never `requests.length`.** `StrictMode`
+  runs every effect twice, so the same window legitimately arrives twice; what the specs assert is
+  that no render and no clock tick asks for a *new* one.
+- **Modality is assertable directly.** `expect(locator.click({ timeout })).rejects.toThrow(/intercepts
+  pointer events/)` is a stronger statement than a forced click, and `dialog.matches(':modal')` is the
+  browser's own answer. Both are used.
+- **The integrated lane must not be given a fixed date.** `integratedTest` asks the *browser* (whose
+  timezone is the pinned one, unlike Node's) for today, freezes at 14:20 on it, and asserts on note
+  **content** rather than ids — the seed mints a fresh `Guid` per process and is anchored to the API
+  process's `DateTime.Today`.
+- **`/swagger/index.html` is the API's readiness URL**, and the only one usable: the notes routes need
+  query parameters, so a bare GET on them is a `400`. It is served only under `ASPNETCORE_ENVIRONMENT=Development`,
+  which the `http` launch profile sets.
+
+### Proving the suite can fail
+
+Two deliberate breakages, both reverted:
+
+- Changing one assertion (`18:00 – 21:00` → `19:00 – 21:00`) produced output naming the spec, the
+  matcher, expected vs received, and the file and line — readable by an agent without a report server.
+- Changing `NEIGHBOUR_DAYS` from 1 to 2 in `App.tsx` — a plausible regression, not a syntax error —
+  turned **14 specs red across five files**: the day headings, the request windows, the per-day row
+  counts, the calendar jump and both rollover journeys. The suite is load-bearing.
+
+A third attempt (gutting `occursAtFor`) failed the *build* rather than the suite, because the now-unused
+parameter tripped `noUnusedParameters` — a reminder that `tsc -b` runs before the stubbed lane's server
+starts, so a type error surfaces as `Process from config.webServer was not able to start. Exit code: 2`
+rather than as a test failure.

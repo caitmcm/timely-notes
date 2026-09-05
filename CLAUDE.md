@@ -14,7 +14,9 @@ timely-notes/
 ├── feature-docs/                  # how work is defined and recorded
 │   ├── WORKFLOW.MD                # the process — read before specifying or implementing
 │   ├── todo/                      # the feature specifications not yet finished
-│   │   └── NoteAutosave.MD        # next: create-on-open, autosave, POST/PUT
+│   │   ├── OneNotePerPeriod.MD    # next: a period holds 0 or 1 notes; the period is the key
+│   │   ├── NoteAutosave.MD        # then: save-on-first-content, autosave, PUT upsert + DELETE
+│   │   └── EmptyNotePruning.MD    # specified, not scheduled: server-side sweep of blank notes
 │   └── done/                      # completed specifications, kept as a record
 │       ├── GetNotesBySchedule.MD
 │       ├── FrontendSkeleton.MD

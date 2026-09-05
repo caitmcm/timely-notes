@@ -8,24 +8,23 @@ public class GetNoteDaysByScheduleEndpoint(INoteRepository notes)
 {
     public override void Configure()
     {
-        Get("api/schedules/{scheduleShortName}/note-days");
+        Get("api/schedules/{schedule}/note-days");
         AllowAnonymous();
         Summary(s =>
         {
             s.Summary = "Counts a Schedule's notes per day, for painting a calendar.";
             s.Description =
-                "Days holding notes whose occursAt is in [searchFrom, searchTo) — searchTo exclusive. "
-                + "Both bounds are required ISO 8601 instants carrying their UTC offset, at most "
-                + $"{GetNoteDaysByScheduleValidator.MaximumRange.TotalDays:0} days apart. Notes are "
-                + "grouped into days in searchFrom's offset, so the days returned are the caller's.";
+                "Days holding notes in [searchFrom, searchTo) — searchTo exclusive. Both bounds are "
+                + "required calendar dates (2026-09-01), at most "
+                + $"{GetNoteDaysByScheduleValidator.MaximumRangeInDays} days apart.";
         });
     }
 
     public override async Task HandleAsync(GetNoteDaysByScheduleRequest req, CancellationToken ct)
     {
-        // Both bounds are non-null: the validator runs first.
+        // The Schedule parses and both bounds are non-null: the validator runs first.
         var counts = await notes.GetDayCountsBySchedule(
-            req.ScheduleShortName, req.SearchFrom!.Value, req.SearchTo!.Value, ct);
+            req.ScheduleSpanHours, req.SearchFrom!.Value, req.SearchTo!.Value, ct);
 
         await Send.OkAsync(
             [.. counts.Select(count => new NoteDayResponse { Day = count.Day, Count = count.Count })],

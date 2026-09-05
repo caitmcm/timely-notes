@@ -8,31 +8,31 @@ public class GetNotesByScheduleEndpoint(INoteRepository notes)
 {
     public override void Configure()
     {
-        Get("api/schedules/{scheduleShortName}/notes");
+        Get("api/schedules/{schedule}/notes");
         AllowAnonymous();
         Summary(s =>
         {
-            s.Summary = "Lists a Schedule's notes in a time range, newest first.";
+            s.Summary = "Lists a Schedule's notes in a range of days, newest first.";
             s.Description =
-                "Notes whose occursAt is in [searchFrom, searchTo) — searchTo exclusive, so adjacent "
-                + "windows never repeat a note. Both bounds are required ISO 8601 instants carrying "
-                + $"their UTC offset, at most {GetNotesByScheduleValidator.MaximumRange.TotalDays:0} days apart.";
+                "Notes whose day is in [searchFrom, searchTo) — searchTo exclusive, so adjacent "
+                + "windows never repeat a note. Both bounds are required calendar dates (2026-08-27), "
+                + $"at most {GetNotesByScheduleValidator.MaximumRangeInDays} days apart.";
         });
     }
 
     public override async Task HandleAsync(GetNotesByScheduleRequest req, CancellationToken ct)
     {
-        // Both bounds are non-null: the validator runs first.
+        // The Schedule parses and both bounds are non-null: the validator runs first.
         var scheduleNotes = await notes.GetBySchedule(
-            req.ScheduleShortName, req.SearchFrom!.Value, req.SearchTo!.Value, ct);
+            req.ScheduleSpanHours, req.SearchFrom!.Value, req.SearchTo!.Value, ct);
 
         await Send.OkAsync(
             [
                 .. scheduleNotes.Select(note => new NoteResponse
                 {
-                    Id = note.Id,
+                    Day = note.Day,
+                    PeriodOrdinal = note.PeriodOrdinal,
                     Content = note.Content,
-                    OccursAt = note.OccursAt,
                     CreatedAt = note.CreatedAt,
                     ModifiedAt = note.ModifiedAt
                 })

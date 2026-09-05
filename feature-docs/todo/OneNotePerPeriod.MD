@@ -8,7 +8,7 @@ not as an instant.**
 A note is addressed by three things and nothing else: the Schedule it belongs to, the calendar
 day it sits on, and **which period of that day** it is. On `s3` the day has eight periods, so
 09:00–12:00 is `p4`; on `s1` it is `p10`; on `s6`, `p2`. The address of a note is
-`(ScheduleShortName, Day, Ordinal)`, all three immutable, and the URL says it outright:
+`(ScheduleSpanHours, Day, PeriodOrdinal)`, all three immutable, and the URL says it outright:
 
 ```
 /api/schedules/s3/notes/2026-09-05/p4
@@ -70,6 +70,19 @@ once each slice is implemented.
   nothing about what it counts and reads as an id; `p4` is self-describing in a log line, in
   the `.http` file and in a test name. 1-based because the user's sentence is "the fourth
   period", and the only arithmetic that touches it lives in one function per project.
+- **A Schedule is a number, not a name, and `ScheduleShortName` is gone.** Added during
+  implementation, at the user's direction. `3` is the fact and the `s` is a sigil, so the model holds
+  `int ScheduleSpanHours` and the wire keeps `s3`. `Schedules.TryParse`/`Format` are the only place
+  the sigil is added or removed, and they are where `p{n}` will be parsed too when the write routes
+  land — one parse site for both sigils rather than string handling scattered through the endpoints.
+  The period ordinal is named `PeriodOrdinal` to match. **`ScheduleOrdinal` was considered and
+  rejected:** `p4` genuinely is the fourth period, but `3` is not the third Schedule — it is a span,
+  and using one word for both facts in a single record is the kind of stand-in this feature exists to
+  remove.
+- **This makes the span the Schedule's identity, and that is a decision, not an accident.** A
+  Schedule is unique per user and no two overlap the same periods, so no two can share a span; the
+  only customisation ever expected is another divisor of 24, such as 2 or 12. `ScheduleShortName`
+  already encoded the span — typing it as an integer stops that hiding.
 - **The day is a plain calendar date, `2026-09-05` — no time, no offset.** That is the whole
   point: a date has no instant to be reinterpreted. The browser sends the day it is showing,
   the server stores that day, and it comes back the same day in Auckland as in London.
@@ -89,7 +102,7 @@ once each slice is implemented.
   instant. The backend still needs one small fact about a Schedule — **how many periods a day
   has** — to reject `p9` on `s3`, and that is a bound check, not a timezone question.
 - **The `400`s the reads should have had all along.** An unknown Schedule short name and an
-  out-of-range ordinal are both rejected by name. `Schedules.PeriodCountFor(shortName)` in
+  out-of-range ordinal are both rejected by name. `Schedules.PeriodCountFor(spanHours)` in
   `Models/` is the one place the backend knows a Schedule's shape — a step toward the Schedule
   endpoints `DESIGN DOCUMENT.MD` wants, taken because the address needs it, not for its own
   sake.
@@ -187,10 +200,11 @@ to the server and reintroduce everything above.
 ### Backend — `TimelyNotes.Backend/TimelyNotes.API`
 
 - `Models/Note.cs` — `Id` and `OccursAt` removed; `Day` (`DateOnly`) and `Ordinal` (`int`)
-  added. The remaining fields are the key (`ScheduleShortName`, `Day`, `Ordinal`), the content,
+  added. The remaining fields are the key (`ScheduleSpanHours`, `Day`, `PeriodOrdinal`), the content,
   and the two audit stamps.
-- `Models/Schedules.cs` — new. `PeriodCountFor(shortName)`, `IsKnown(shortName)` and
-  `IsValidOrdinal(shortName, ordinal)`: the one place the backend knows a Schedule's shape.
+- `Models/Schedules.cs` — new. `Known`, `IsKnown(spanHours)`, `PeriodCountFor(spanHours)`,
+  `IsValidPeriodOrdinal(spanHours, ordinal)` and the `TryParse`/`Format` sigil pair: the one place
+  the backend knows a Schedule's shape.
 - `Repositories/INoteRepository.cs` / `InMemoryNoteRepository.cs` — both reads take
   `DateOnly searchFrom, DateOnly searchTo`; `GetBySchedule` orders by `(Day, Ordinal)`
   descending; `GetDayCountsBySchedule` groups on `Day` with no offset conversion.
@@ -231,48 +245,48 @@ to the server and reintroduce everything above.
 
 ### 1. The Schedule's shape, in the backend
 
-- [ ] Test first: `Schedules.PeriodCountFor` answers 24 / 8 / 4 for `s1` / `s3` / `s6`, and
-      rejects an unknown short name rather than defaulting.
-- [ ] Test first: `Schedules.IsValidOrdinal` accepts 1 and the count, rejects 0, the count + 1
+- [x] Test first: `Schedules.PeriodCountFor` answers 24 / 8 / 4 for `s1` / `s3` / `s6`, and
+      rejects an unknown Schedule rather than defaulting.
+- [x] Test first: `Schedules.IsValidPeriodOrdinal` accepts 1 and the count, rejects 0, the count + 1
       and negatives — the boundaries, since a 1-based off-by-one is the live risk here.
 
 ### 2. The key in the backend model
 
-- [ ] Test first: a note is identified by `(ScheduleShortName, Day, Ordinal)` — the repository's
+- [x] Test first: a note is identified by `(ScheduleSpanHours, Day, PeriodOrdinal)` — the repository's
       seed is the only writer today, so this is asserted as an invariant over `SeedNotes()`
       rather than through a write path that does not exist yet.
-- [ ] Replace `Id` and `OccursAt` on `Note` with `Day` and `Ordinal`; update every test that
+- [x] Replace `Id` and `OccursAt` on `Note` with `Day` and `Ordinal`; update every test that
       names them.
-- [ ] `NoteResponse` drops `id`/`occursAt` and gains `day`/`ordinal`.
+- [x] `NoteResponse` drops `id`/`occursAt` and gains `day`/`ordinal`.
 
 ### 3. The seed
 
-- [ ] Test first: every seeded note's ordinal is valid for its Schedule, and no Schedule has two
+- [x] Test first: every seeded note's ordinal is valid for its Schedule, and no Schedule has two
       notes in one `(day, ordinal)`. Both assertions run over the real seed, so a careless
       future addition fails the build.
-- [ ] Re-express the seed as `(dayOffset, ordinal)` — `at(1, 9.5)` had no period to belong to
+- [x] Re-express the seed as `(dayOffset, ordinal)` — `at(1, 9.5)` had no period to belong to
       and becomes an ordinal like the rest. Keep the spread across today ± 3 days and keep at
       least one Schedule with two notes on the same *day* in different periods, so the day view
       still shows more than one row filled.
 
 ### 4. The reads
 
-- [ ] Test first, repository: `GetBySchedule` filters `[searchFrom, searchTo)` on `Day` — a note
+- [x] Test first, repository: `GetBySchedule` filters `[searchFrom, searchTo)` on `Day` — a note
       on `searchTo` is excluded, one on `searchFrom` is included — and orders by
       `(Day, Ordinal)` descending, asserted with two notes on one day so the ordinal tiebreak is
       under test rather than incidental.
-- [ ] Test first, repository: `GetDayCountsBySchedule` groups on `Day` with no offset in sight,
+- [x] Test first, repository: `GetDayCountsBySchedule` groups on `Day` with no offset in sight,
       ascending, empty days omitted.
-- [ ] Both requests take `DateOnly?` bounds; both validators keep `NotNull`, the half-open
+- [x] Both requests take `DateOnly?` bounds; both validators keep `NotNull`, the half-open
       ordering rule and the 7-day / 42-day caps, with messages naming the `2026-09-05` format.
-- [ ] Test first, endpoints: an unknown Schedule short name is a `400` naming the parameter, on
+- [x] Test first, endpoints: an unknown or unparseable Schedule is a `400` naming the parameter, on
       both routes. This is behaviour the reads should always have had; the new `Schedules.IsKnown`
       is what makes it a one-liner.
-- [ ] Endpoint `Summary`/`Description` updated: half-open day range, the caps, and **no** offset
+- [x] Endpoint `Summary`/`Description` updated: half-open day range, the caps, and **no** offset
       clause — the sentence about grouping in `searchFrom`'s offset describes machinery that no
       longer exists.
-- [ ] `TimelyNotes.API.http` requests updated to the date form.
-- [ ] The existing range, boundary and rejection tests still hold in their new shape — this is
+- [x] `TimelyNotes.API.http` requests updated to the date form.
+- [x] The existing range, boundary and rejection tests still hold in their new shape — this is
       the contract change, and that suite is what says it landed intact.
 
 ### 5. The frontend day key
@@ -365,29 +379,29 @@ to the server and reintroduce everything above.
 
 ### 10. Docs
 
-- [ ] `DESIGN DOCUMENT.MD`: record that a period holds at most one note, that a note is
+- [x] `DESIGN DOCUMENT.MD`: record that a period holds at most one note, that a note is
       identified by `(Schedule, Day, Ordinal)`, and that it has no `OccursAt` — amend the
       three-timestamp section, which is now two server-side audit stamps and a period.
-- [ ] `CLAUDE.md` **Backend**: the natural key and its URL form; the date-ranged reads and the
+- [x] `CLAUDE.md` **Backend**: the natural key and its URL form; the date-ranged reads and the
       removal of the offset machinery; **the server has no timezone**, in those words, with the
       `?offset=` parameter named as the mistake it forbids.
 - [ ] `CLAUDE.md` **Frontend**: `DayKey` as a string and why (the wire form *is* the in-memory
       form; ordering is lexicographic; the four arithmetic functions are the only place a `Date`
       is built from one); `dayKeyOf(now)` as the single clock-to-calendar conversion; `Period`
       carrying no `Date`; the single-note row; the removal of `occursAtFor` and `toOffsetIso`.
-- [ ] `CLAUDE.md`: `CreatedAt`/`ModifiedAt` are server-zone stamps, are not rendered, and are
+- [x] `CLAUDE.md`: `CreatedAt`/`ModifiedAt` are server-zone stamps, are not rendered, and are
       labelled as server time if they ever are.
 - [ ] `CLAUDE.md` **Current state** once green.
 - [ ] Add a note to `feature-docs/done/LiveClock.MD` saying its §4 live-instant `occursAt` was
       overturned here, and by what.
-- [ ] Add a note to `feature-docs/done/NotesDateRange.MD` and
+- [x] Add a note to `feature-docs/done/NotesDateRange.MD` and
       `feature-docs/done/GetNotesBySchedule.MD` saying the instant-with-offset window they
       specified is now a date window, and why the offset stopped being needed. Those documents
       are the record; they should not read as current.
 
 ## Verify
 
-- [ ] `dotnet test` and `dotnet build` from `TimelyNotes.Backend/` — green, no new warnings.
+- [x] `dotnet test` and `dotnet build` from `TimelyNotes.Backend/` — green, no new warnings.
 - [ ] `npm test`, `npm run build`, `npm run lint` and `npm run test:e2e` from
       `timely-notes-ui/` — all green.
 - [ ] `npm run test:e2e:integrated` — the two projects agree on the new date-range contract.
@@ -405,7 +419,7 @@ to the server and reintroduce everything above.
         block, one per row.
   - [ ] With the browser set to a timezone west of Greenwich, every note still renders on the
         day the seed put it on, and the requests are the same ones.
-- [ ] By hand through `TimelyNotes.API.http`: both read routes answer to date bounds, an unknown
+- [x] By hand through `TimelyNotes.API.http`: both read routes answer to date bounds, an unknown
       Schedule is a `400`, and no `id` or `occursAt` appears in any response body.
 
 ## Deferred
@@ -439,4 +453,79 @@ to the server and reintroduce everything above.
 
 ## Implementation notes
 
-_Left empty at specification time — the implementing agent fills this in._
+### Backend slice — 2026-09-05
+
+**Sections 1–4 and the backend half of section 10 are done. Sections 5–9 and the frontend half of
+section 10 are not started and belong to the next agent** — see the handover written to
+`C:\Users\euanm\AppData\Local\Temp\claude\c--Users-euanm-source-repos-timely-notes\f57123c5-8320-480a-9241-0af200b588ed\scratchpad\FRONTEND-HANDOVER.md`.
+The spec stays in `todo/`; the feature is not finished until the frontend lands.
+
+**113 backend tests pass** (up from 55), `dotnet build` clean with no new warnings. The frontend is
+knowingly broken against this API and stays that way until its own slice runs.
+
+#### Resolved: FastEndpoints binds `DateOnly?` natively
+
+Proved with a throwaway probe before any validator was rewritten. FastEndpoints 8.3.0 binds a
+`DateOnly?` query parameter, leaves an omitted one null, and rejects `not-a-date` and `2026-13-45`.
+No `string?`-and-parse fallback was needed.
+
+#### Departures from the specification
+
+- **A malformed date is rejected by the binder, not the validator**, with FastEndpoints' own wording
+  (`Value [notadate] is not valid for a [DateOnly] property!`). Section 4 asked for messages naming
+  the `2026-09-05` format; that holds for the omitted, ordering and cap rules, but a garbled date
+  cannot carry our message without intercepting binding, which was not worth it. There is a test
+  pinning the `400` and naming the reason in its own name.
+- **`MaximumRange` became `MaximumRangeInDays`, an `int`.** `DateOnly` has no subtraction operator,
+  so the cap is compared with `searchTo.DayNumber - searchFrom.DayNumber`. The numbers (7 and 42) and
+  their reasons are unchanged and still live only in their validators.
+- **`CLAUDE.md` **Current state** was partly updated rather than left alone.** The instruction was to
+  leave it until the whole feature is green, but its backend paragraphs described deleted machinery
+  (`OccursAt`, offset grouping) and would have misled the frontend agent who reads that file first.
+  The backend paragraphs are now true; the frontend paragraph is untouched and is preceded by a line
+  saying it is currently red against the API and why.
+- **The naming change** (`ScheduleShortName` → `int ScheduleSpanHours`, `Ordinal` →
+  `PeriodOrdinal`) was requested by the user after the spec was written and is recorded as two new
+  entries under **Scope decisions → The address**, with the rejected `ScheduleOrdinal` alternative
+  and the reason.
+
+#### Deleted rather than adapted
+
+- **`InMemoryNoteRepositoryTests.GetDayCountsBySchedule_GroupsInSearchFromsOffset`** asserted that
+  the same instants bucket into different days at different offsets. That behaviour no longer exists
+  — there is no instant and no offset — so the test was removed, not rewritten. It is the clearest
+  single marker of what this feature deleted.
+- **The `ToOffset` grouping** in `GetDayCountsBySchedule` and the `toOffsetIso`-shaped machinery it
+  paired with server-side. Grouping is now `GroupBy(note => note.Day)`.
+- **The repository's class comment** explaining the frozen seed anchor "would mint fresh ids" — there
+  are no ids. The frozen-anchor reason itself is still true and still non-obvious, so that half was
+  kept and the id half deleted.
+
+#### Behaviour that changed, deliberately
+
+- **An unknown Schedule is now a `400` naming `schedule`, on both routes**, where it was a `200` with
+  an empty list. The two tests asserting the old behaviour were inverted rather than deleted, and
+  widened: `s99`, `s2` (a real divisor the app does not offer), `1` (no sigil) and `nonsense` all
+  reject. **The repository stays tolerant** — filtering is its job, rejecting is the validator's —
+  and `GetBySchedule_ReturnsEmpty_ForAnUnknownSchedule` is still green, on purpose.
+- **`Known` gates on `{1, 3, 6}`, not on "divides 24".** A divisor rule would make the server answer
+  for grids no client builds. A separate test asserts every member of `Known` divides 24 exactly, so
+  a future `5` fails the build while adding `2` or `12` stays a one-line edit.
+
+#### The seed
+
+Re-expressed as `Seed(spanHours, dayOffset, periodOrdinal, content)`. The old `at(1, 9.5)` — the
+09:30 note the earlier draft called misaligned — is simply `p10`, the same period 09:00 was in; there
+was never a second address for it. Two invariants are asserted over the real seed, so a careless
+addition fails the build: every ordinal is valid for its Schedule, and no
+`(ScheduleSpanHours, Day, PeriodOrdinal)` repeats. A third test pins that each Schedule still keeps
+two notes in different periods of today, which the day view needs.
+
+#### Verified by hand
+
+Against `dotnet run`, with the rewritten `TimelyNotes.API.http`: both routes answer to date bounds;
+`s3` returns `2026-09-06 p5`, `2026-09-05 p6`, `2026-09-05 p4` in that order, so the ordinal tiebreak
+is visible in a real response; `note-days` returns plain `"2026-09-05"` strings; an unknown Schedule,
+an over-cap window and an old-style instant bound are each a `400`; and **no `id` or `occursAt`
+appears in any response body**, which also has a test.
+

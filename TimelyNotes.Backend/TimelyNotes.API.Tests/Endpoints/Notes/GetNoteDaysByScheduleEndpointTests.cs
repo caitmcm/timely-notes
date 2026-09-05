@@ -7,21 +7,20 @@ namespace TimelyNotes.API.Tests.Endpoints.Notes;
 
 public class GetNoteDaysByScheduleEndpointTests(ApiFixture app) : TestBase<ApiFixture>
 {
-    private static readonly DateTimeOffset Today = new(DateTime.Today, DateTimeOffset.Now.Offset);
+    private static readonly DateOnly Today = DateOnly.FromDateTime(DateTime.Today);
 
-    private static DateTimeOffset Day(int offsetInDays) => Today.AddDays(offsetInDays);
+    private static DateOnly Day(int offsetInDays) => Today.AddDays(offsetInDays);
 
-    /// <summary>Percent-encoded so the offsets survive the query string.</summary>
-    private static string Route(string scheduleShortName, DateTimeOffset searchFrom, DateTimeOffset searchTo) =>
-        $"/api/schedules/{scheduleShortName}/note-days"
-        + $"?searchFrom={Uri.EscapeDataString(searchFrom.ToString("O"))}"
-        + $"&searchTo={Uri.EscapeDataString(searchTo.ToString("O"))}";
+    private static string Route(string schedule, DateOnly searchFrom, DateOnly searchTo) =>
+        $"/api/schedules/{schedule}/note-days"
+        + $"?searchFrom={searchFrom:yyyy-MM-dd}"
+        + $"&searchTo={searchTo:yyyy-MM-dd}";
 
     private async Task<(HttpResponseMessage Response, List<NoteDayResponse> Days)> Get(
-        string scheduleShortName, DateTimeOffset searchFrom, DateTimeOffset searchTo)
+        string schedule, DateOnly searchFrom, DateOnly searchTo)
     {
         var response = await app.Client.GetAsync(
-            Route(scheduleShortName, searchFrom, searchTo), TestContext.Current.CancellationToken);
+            Route(schedule, searchFrom, searchTo), TestContext.Current.CancellationToken);
 
         if (response.StatusCode != HttpStatusCode.OK)
         {
@@ -45,13 +44,24 @@ public class GetNoteDaysByScheduleEndpointTests(ApiFixture app) : TestBase<ApiFi
     }
 
     [Fact]
-    public async Task CountsEveryNoteOnADayAndReportsItsMidnight()
+    public async Task CountsEveryNoteOnADayAndReportsThatDay()
     {
         var (_, days) = await Get("s1", Today, Day(1));
 
         var today = Assert.Single(days);
         Assert.Equal(Today, today.Day);
         Assert.Equal(2, today.Count);
+    }
+
+    /// <summary>A plain date on the wire: no offset to reinterpret it by.</summary>
+    [Fact]
+    public async Task ReportsEachDayAsAPlainCalendarDate()
+    {
+        var response = await app.Client.GetAsync(
+            Route("s1", Today, Day(1)), TestContext.Current.CancellationToken);
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        Assert.Contains($"\"{Today:yyyy-MM-dd}\"", body);
     }
 
     [Fact]
@@ -80,20 +90,26 @@ public class GetNoteDaysByScheduleEndpointTests(ApiFixture app) : TestBase<ApiFi
         Assert.Equal(2, s3.Sum(day => day.Count));
     }
 
-    [Fact]
-    public async Task Returns200WithAnEmptyListForAnUnknownSchedule()
+    [Theory]
+    [InlineData("s99")]
+    [InlineData("s2")]
+    [InlineData("1")]
+    [InlineData("nonsense")]
+    public async Task Returns400NamingTheScheduleWhenItIsNotOneTheAppOffers(string schedule)
     {
-        var (response, days) = await Get("s99", Day(-4), Day(4));
+        var response = await app.Client.GetAsync(
+            Route(schedule, Day(-4), Day(4)), TestContext.Current.CancellationToken);
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Empty(days);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("schedule", body, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
     public async Task Returns400NamingSearchFromWhenItIsMissing()
     {
         var response = await app.Client.GetAsync(
-            $"/api/schedules/s1/note-days?searchTo={Uri.EscapeDataString(Day(1).ToString("O"))}",
+            $"/api/schedules/s1/note-days?searchTo={Day(1):yyyy-MM-dd}",
             TestContext.Current.CancellationToken);
         var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
 
@@ -105,7 +121,7 @@ public class GetNoteDaysByScheduleEndpointTests(ApiFixture app) : TestBase<ApiFi
     public async Task Returns400NamingSearchToWhenItIsMissing()
     {
         var response = await app.Client.GetAsync(
-            $"/api/schedules/s1/note-days?searchFrom={Uri.EscapeDataString(Today.ToString("O"))}",
+            $"/api/schedules/s1/note-days?searchFrom={Today:yyyy-MM-dd}",
             TestContext.Current.CancellationToken);
         var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
 

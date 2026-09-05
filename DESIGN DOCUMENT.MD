@@ -19,8 +19,8 @@ This document captures the **goals** for the project. It is not an implementatio
 The business domain is a simple hierarchy:
 
 - **Instance** — the user's account / overall use of the app. An Instance has many Schedules.
-- **Schedule** — a user-created container (vault-like, in the spirit of Obsidian) for a given spanning period (1-hour, 3-hourly, or 6-hourly). A Schedule has many Notes. Creating a Schedule means selecting its spanning period; the **short name** is not user-entered — it's the identifier for that period setting: `s1` (1-hourly), `s3` (3-hourly), `s6` (6-hourly). So at most one Schedule exists per spanning period.
-- **Note** — a markdown document created within a specific Schedule, at a specific date and slot. A candidate naming convention is `[schedule shortname]-yyyy-mm-dd-hh`, with the shortname first to improve searchability.
+- **Schedule** — a user-created container (vault-like, in the spirit of Obsidian) for a given spanning period (1-hour, 3-hourly, or 6-hourly). A Schedule has many Notes. Creating a Schedule means selecting its spanning period, and **the Schedule *is* that span**: it is stored as the number of hours (1, 3, 6) and spelled `s1`/`s3`/`s6` on the wire. At most one Schedule exists per spanning period, so no two overlap the same periods and the span is a sound identity. The only customisation ever likely is another divisor of 24, such as 2 or 12.
+- **Note** — a markdown document created within a specific Schedule, on a specific calendar day, in a specific **period** of that day. **A period holds at most one note**, and the period *is* the note's identity: a note is addressed by `(Schedule, Day, PeriodOrdinal)` and by nothing else. There is no surrogate id. The ordinal is 1-based and spelled `p{n}`, so `s3`'s 09:00–12:00 block is `p4` and the URL reads `/api/schedules/s3/notes/2026-09-05/p4`.
 
 Rather than a single global granularity setting, a note is created within whichever Schedule is currently active, and is displayed only on that Schedule's view. The user can switch between Schedules, and each Schedule only shows the notes created within it. This avoids ever needing to re-bucket or reinterpret a note's slot: a 6-hourly note stays a 6-hourly note on its own Schedule, even if the user later switches to and creates notes in a 3-hourly Schedule.
 
@@ -28,20 +28,22 @@ Rather than a single global granularity setting, a note is created within whiche
 
 ### Backend (`TimelyNotes.Backend`)
 
-- Provide endpoints for markdown notes: **List** (notes for the user's selected Schedule and visible date range), **Get by Id**, **Create** and **Update**. No delete for now. A note's *content* is editable after creation; the slot it sits in is not — see the timestamp rules below.
+- Provide endpoints for markdown notes: **List** (notes for the user's selected Schedule and visible date range), and a **PUT** upsert on the period address. No **Get by Id** and no create/update split — there is no id, and a write to a period either creates the note there or replaces its content. A note's *content* is editable after creation; the period it sits in is not — it is the address.
 - Provide endpoints for **Schedules**: create a Schedule (by selecting a spanning period), and list Schedules.
 - Wire up endpoints using **FastEndpoints**.
 - Use the **repository pattern** to abstract reads/writes to the data store, so the storage mechanism can change without touching endpoint logic.
 - Start with an **in-memory** repository implementation as a placeholder.
 - Data layer/persistence choice (e.g. a real database) is an open question to be figured out later — the repository abstraction should make that swap possible without a rewrite.
-- Each note carries **three timestamps, with one job each** — this is an hourly diary, not a once-a-day journal entry:
-  - **`OccursAt`** — the slot the note is *for*. The only timestamp the application reasons about: it places the note on its Schedule and drives all filtering and ordering. Set at creation and **immutable** thereafter, so a note never moves through time.
+- A note carries **a period and two audit stamps** — this is an hourly diary, not a once-a-day journal entry:
+  - **`Day` + `PeriodOrdinal`** — the slot the note is *for*, and its address. Not a timestamp: a calendar date and an integer, so there is no instant to reinterpret in another timezone. Immutable, and the only fields placement, ordering and filtering use. This replaces the earlier `OccursAt` instant, which let *rendering* and *addressing* disagree and so made a second, unreachable note in one period constructible.
   - **`CreatedAt`** — when the note was written. Server-set, audit only.
   - **`ModifiedAt`** — when the note was last changed. Server-set, audit only.
+- **`CreatedAt`/`ModifiedAt` are in the server's zone and are not rendered.** If either is ever displayed it is labelled as server time rather than quietly reinterpreted into the viewer's — reinterpreting it would put an instant back into the part of the model the period key clears.
+- **The server has no timezone.** It stores a date and an integer, and reads a clock only for those two audit stamps. No route takes an offset. The period grid is the viewer's local one, and the record is explicitly a claim about the writer's local calendar — which is what a single user with one calendar means. Multi-timezone support would need a Schedule that carries its own IANA timezone.
 - Each note belongs **immutably** to exactly one **Schedule**, and is slotted according to that Schedule's spanning period (1-hour by default; 3-hourly/6-hourly as user-defined Schedules). A note's Schedule assignment never changes after creation.
 - Notes **persist across days** — history is browsable, not reset daily, and slots ahead of now are writable as well as readable.
 - **List** answers for a **date range**, not a single day, so the frontend can fetch a window at a time as the user moves between days.
-- Provide a **per-day note count** endpoint over a range of up to six weeks, so a month view can show which days already have notes without downloading a month of markdown. Days are grouped in the offset the caller sends, so what comes back is the client's local days.
+- Provide a **per-day note count** endpoint over a range of up to six weeks, so a month view can show which days already have notes without downloading a month of markdown. Both read routes take a half-open range of plain calendar dates.
 
 ### Frontend (`timely-notes-ui`)
 
@@ -52,7 +54,7 @@ Rather than a single global granularity setting, a note is created within whiche
   History and future days are reachable without limit; it is the *scroll* that is bounded, not the browsing. A **Today** button returns the view to the current slot from wherever the calendar has sent it.
 - Provide a button to **create a note** within the current Schedule. Notes can be created against **any** slot the user can scroll to, past or future — a future note is a briefing for your future self (what you want in front of you at that hour), not a task or a reminder. There is no completion state and no notification.
 - Creating a note opens a **pop-up window** for quickly capturing markdown text.
-- **Existing notes are editable.** The app encourages *new note, right now* — the create button always writes into the current slot — but a user who comes back at 3:20pm to correct or clarify the note they wrote in the 12pm–3pm window can do so. Editing changes **content only**: `OccursAt` is fixed, so a note can never be moved to a different slot or Schedule. Expand now, tighten later if it proves to need it.
+- **Existing notes are editable.** The app encourages *new note, right now* — the create button always writes into the current slot — but a user who comes back at 3:20pm to correct or clarify the note they wrote in the 12pm–3pm window can do so. Editing changes **content only**: the period is the address, so moving a note to a different slot or Schedule is not forbidden but unspellable. Expand now, tighten later if it proves to need it.
 - **First-run experience**: a new Instance has no Schedules yet, so the landing page prompts the user to create one. Flow: open the app for the first time → create a Schedule → start taking notes.
 
 ## Tech Stack Notes (from video research)

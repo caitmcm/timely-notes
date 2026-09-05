@@ -9,21 +9,21 @@ public class ApiFixture : AppFixture<Program>;
 
 public class GetNotesByScheduleEndpointTests(ApiFixture app) : TestBase<ApiFixture>
 {
-    private static readonly DateTimeOffset Today = new(DateTime.Today, DateTimeOffset.Now.Offset);
+    private static readonly DateOnly Today = DateOnly.FromDateTime(DateTime.Today);
 
-    private static DateTimeOffset Day(int offsetInDays) => Today.AddDays(offsetInDays);
+    private static DateOnly Day(int offsetInDays) => Today.AddDays(offsetInDays);
 
-    /// <summary>Percent-encoded so the offsets survive the query string.</summary>
-    private static string Route(string scheduleShortName, DateTimeOffset searchFrom, DateTimeOffset searchTo) =>
-        $"/api/schedules/{scheduleShortName}/notes"
-        + $"?searchFrom={Uri.EscapeDataString(searchFrom.ToString("O"))}"
-        + $"&searchTo={Uri.EscapeDataString(searchTo.ToString("O"))}";
+    /// <summary>A date needs no escaping — that is the point of the format.</summary>
+    private static string Route(string schedule, DateOnly searchFrom, DateOnly searchTo) =>
+        $"/api/schedules/{schedule}/notes"
+        + $"?searchFrom={searchFrom:yyyy-MM-dd}"
+        + $"&searchTo={searchTo:yyyy-MM-dd}";
 
     private async Task<(HttpResponseMessage Response, List<NoteResponse> Notes)> Get(
-        string scheduleShortName, DateTimeOffset searchFrom, DateTimeOffset searchTo)
+        string schedule, DateOnly searchFrom, DateOnly searchTo)
     {
         var response = await app.Client.GetAsync(
-            Route(scheduleShortName, searchFrom, searchTo), TestContext.Current.CancellationToken);
+            Route(schedule, searchFrom, searchTo), TestContext.Current.CancellationToken);
 
         if (response.StatusCode != HttpStatusCode.OK)
         {
@@ -45,41 +45,61 @@ public class GetNotesByScheduleEndpointTests(ApiFixture app) : TestBase<ApiFixtu
         Assert.NotEmpty(notes);
         Assert.All(notes, note =>
         {
-            Assert.NotEqual(Guid.Empty, note.Id);
+            Assert.NotEqual(default, note.Day);
+            Assert.True(note.PeriodOrdinal >= 1);
             Assert.False(string.IsNullOrWhiteSpace(note.Content));
-            Assert.NotEqual(default, note.OccursAt);
             Assert.NotEqual(default, note.CreatedAt);
             Assert.NotEqual(default, note.ModifiedAt);
         });
     }
 
+    /// <summary>The response body is the whole contract: no surrogate id, no instant.</summary>
     [Fact]
-    public async Task ReturnsNotesNewestFirstByOccursAt()
+    public async Task CarriesNeitherAnIdNorAnOccursAt()
+    {
+        var response = await app.Client.GetAsync(
+            Route("s1", Day(-3), Day(4)), TestContext.Current.CancellationToken);
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+
+        Assert.DoesNotContain("\"id\"", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("occursAt", body, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ReturnsNotesNewestFirstByDayThenPeriodOrdinal()
     {
         var (_, notes) = await Get("s1", Day(-3), Day(4));
 
-        Assert.Equal(notes.OrderByDescending(note => note.OccursAt), notes);
+        Assert.Equal(
+            notes.OrderByDescending(note => note.Day).ThenByDescending(note => note.PeriodOrdinal),
+            notes);
     }
 
     [Theory]
     [InlineData("s1")]
     [InlineData("s3")]
     [InlineData("s6")]
-    public async Task ReturnsNotesForEverySeededSchedule(string scheduleShortName)
+    public async Task ReturnsNotesForEverySeededSchedule(string schedule)
     {
-        var (response, notes) = await Get(scheduleShortName, Day(-3), Day(4));
+        var (response, notes) = await Get(schedule, Day(-3), Day(4));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.NotEmpty(notes);
     }
 
-    [Fact]
-    public async Task Returns200WithAnEmptyListForAnUnknownSchedule()
+    [Theory]
+    [InlineData("s99")]
+    [InlineData("s2")]
+    [InlineData("1")]
+    [InlineData("nonsense")]
+    public async Task Returns400NamingTheScheduleWhenItIsNotOneTheAppOffers(string schedule)
     {
-        var (response, notes) = await Get("s99", Day(-3), Day(4));
+        var response = await app.Client.GetAsync(
+            Route(schedule, Day(-3), Day(4)), TestContext.Current.CancellationToken);
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Empty(notes);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("schedule", body, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -89,7 +109,7 @@ public class GetNotesByScheduleEndpointTests(ApiFixture app) : TestBase<ApiFixtu
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.NotEmpty(notes);
-        Assert.All(notes, note => Assert.Equal(DateTime.Today, note.OccursAt.LocalDateTime.Date));
+        Assert.All(notes, note => Assert.Equal(Today, note.Day));
     }
 
     [Fact]
@@ -104,32 +124,38 @@ public class GetNotesByScheduleEndpointTests(ApiFixture app) : TestBase<ApiFixtu
     [Fact]
     public async Task AdjacentWindowsNeverReturnTheSameNoteTwice()
     {
-        var (_, earlier) = await Get("s1", Day(-3), Day(0));
-        var (_, later) = await Get("s1", Day(0), Day(3));
+        var (_, earlier) = await Get("s1", Day(-3), Today);
+        var (_, later) = await Get("s1", Today, Day(3));
 
         Assert.NotEmpty(earlier);
         Assert.NotEmpty(later);
-        Assert.Empty(earlier.Select(note => note.Id).Intersect(later.Select(note => note.Id)));
+        Assert.Empty(
+            earlier.Select(note => (note.Day, note.PeriodOrdinal))
+                .Intersect(later.Select(note => (note.Day, note.PeriodOrdinal))));
     }
 
     [Fact]
-    public async Task Returns400WhenSearchFromIsMissing()
+    public async Task Returns400NamingSearchFromWhenItIsMissing()
     {
         var response = await app.Client.GetAsync(
-            $"/api/schedules/s1/notes?searchTo={Uri.EscapeDataString(Day(1).ToString("O"))}",
+            $"/api/schedules/s1/notes?searchTo={Day(1):yyyy-MM-dd}",
             TestContext.Current.CancellationToken);
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("searchFrom", body);
     }
 
     [Fact]
-    public async Task Returns400WhenSearchToIsMissing()
+    public async Task Returns400NamingSearchToWhenItIsMissing()
     {
         var response = await app.Client.GetAsync(
-            $"/api/schedules/s1/notes?searchFrom={Uri.EscapeDataString(Today.ToString("O"))}",
+            $"/api/schedules/s1/notes?searchFrom={Today:yyyy-MM-dd}",
             TestContext.Current.CancellationToken);
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("searchTo", body);
     }
 
     [Fact]
@@ -141,11 +167,15 @@ public class GetNotesByScheduleEndpointTests(ApiFixture app) : TestBase<ApiFixtu
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
-    [Fact]
-    public async Task Returns400WhenAParameterIsUnparseable()
+    /// <summary>Rejected by the binder rather than the validator, so the message is FastEndpoints'.</summary>
+    [Theory]
+    [InlineData("not-a-date")]
+    [InlineData("2026-13-45")]
+    [InlineData("2026-08-27T00:00:00%2B01:00")]
+    public async Task Returns400WhenABoundIsNotACalendarDate(string searchFrom)
     {
         var response = await app.Client.GetAsync(
-            $"/api/schedules/s1/notes?searchFrom=not-a-date&searchTo={Uri.EscapeDataString(Day(1).ToString("O"))}",
+            $"/api/schedules/s1/notes?searchFrom={searchFrom}&searchTo={Day(1):yyyy-MM-dd}",
             TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);

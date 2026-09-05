@@ -1,10 +1,10 @@
 @TimelyNotes.API_HostAddress = http://localhost:5186
 
-# The notes route filters on a required half-open window: [searchFrom, searchTo).
-# Both are ISO 8601 instants carrying their UTC offset; `+` must be percent-encoded as %2B.
+# Both read routes filter on a required half-open window of calendar dates: [searchFrom, searchTo).
+# Plain dates, no time and no offset — the server has no timezone.
 # Adjust the dates to sit around the day you run these on — the seed is anchored to today ± 3 days.
-@searchFrom = 2026-08-27T00:00:00%2B01:00
-@searchTo = 2026-08-30T00:00:00%2B01:00
+@searchFrom = 2026-08-27
+@searchTo = 2026-08-30
 
 ### List the notes for the 1-hourly Schedule
 GET {{TimelyNotes.API_HostAddress}}/api/schedules/s1/notes?searchFrom={{searchFrom}}&searchTo={{searchTo}}
@@ -19,15 +19,19 @@ GET {{TimelyNotes.API_HostAddress}}/api/schedules/s6/notes?searchFrom={{searchFr
 Accept: application/json
 
 ### The previous window — half-open, so it shares no note with the one above
-GET {{TimelyNotes.API_HostAddress}}/api/schedules/s1/notes?searchFrom=2026-08-24T00:00:00%2B01:00&searchTo={{searchFrom}}
+GET {{TimelyNotes.API_HostAddress}}/api/schedules/s1/notes?searchFrom=2026-08-24&searchTo={{searchFrom}}
 Accept: application/json
 
 ### A window holding nothing — 200 with an empty list
-GET {{TimelyNotes.API_HostAddress}}/api/schedules/s1/notes?searchFrom=2027-01-01T00:00:00%2B00:00&searchTo=2027-01-02T00:00:00%2B00:00
+GET {{TimelyNotes.API_HostAddress}}/api/schedules/s1/notes?searchFrom=2027-01-01&searchTo=2027-01-02
+Accept: application/json
+
+### An unknown Schedule — a 400 naming the parameter
+GET {{TimelyNotes.API_HostAddress}}/api/schedules/s99/notes?searchFrom={{searchFrom}}&searchTo={{searchTo}}
 Accept: application/json
 
 ### Too wide — 8 days is a 400
-GET {{TimelyNotes.API_HostAddress}}/api/schedules/s1/notes?searchFrom=2026-08-27T00:00:00%2B01:00&searchTo=2026-09-04T00:00:00%2B01:00
+GET {{TimelyNotes.API_HostAddress}}/api/schedules/s1/notes?searchFrom=2026-08-27&searchTo=2026-09-04
 Accept: application/json
 
 ### searchTo before searchFrom — a 400
@@ -38,16 +42,20 @@ Accept: application/json
 GET {{TimelyNotes.API_HostAddress}}/api/schedules/s1/notes?searchFrom={{searchFrom}}
 Accept: application/json
 
-### Per-day note counts for a month grid — 42 days at most, grouped in searchFrom's offset
-GET {{TimelyNotes.API_HostAddress}}/api/schedules/s1/note-days?searchFrom=2026-08-31T00:00:00%2B01:00&searchTo=2026-10-05T00:00:00%2B01:00
+### An instant rather than a date — a 400 from the binder
+GET {{TimelyNotes.API_HostAddress}}/api/schedules/s1/notes?searchFrom=2026-08-27T00:00:00%2B01:00&searchTo={{searchTo}}
+Accept: application/json
+
+### Per-day note counts for a month grid — 42 days at most
+GET {{TimelyNotes.API_HostAddress}}/api/schedules/s1/note-days?searchFrom=2026-08-31&searchTo=2026-10-05
 Accept: application/json
 
 ### The same window for the 6-hourly Schedule
-GET {{TimelyNotes.API_HostAddress}}/api/schedules/s6/note-days?searchFrom=2026-08-31T00:00:00%2B01:00&searchTo=2026-10-05T00:00:00%2B01:00
+GET {{TimelyNotes.API_HostAddress}}/api/schedules/s6/note-days?searchFrom=2026-08-31&searchTo=2026-10-05
 Accept: application/json
 
 ### Too wide — 43 days is a 400
-GET {{TimelyNotes.API_HostAddress}}/api/schedules/s1/note-days?searchFrom=2026-08-31T00:00:00%2B01:00&searchTo=2026-10-13T00:00:00%2B01:00
+GET {{TimelyNotes.API_HostAddress}}/api/schedules/s1/note-days?searchFrom=2026-08-31&searchTo=2026-10-13
 Accept: application/json
 
 ###

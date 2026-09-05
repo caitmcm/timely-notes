@@ -150,3 +150,20 @@ only its own notes newest-first, the adjacent earlier window shares none of them
 returns `[]`, and an 8-day window and a missing parameter each return a 400 carrying the messages
 above. The browser click-through of `./run-dev.ps1` was not run — both servers were exercised over
 HTTP instead, including the proxied `/api` route with the exact window `App` sends.
+
+## Superseded — 2026-09-05, by `OneNotePerPeriod`
+
+**The instant-with-offset window this document specifies is now a window of plain calendar dates.**
+`searchFrom`/`searchTo` are `DateOnly` (`2026-08-27`), still half-open `[searchFrom, searchTo)` and
+still capped at 7 days for `notes` and 42 for `note-days`; the caps are now `MaximumRangeInDays`
+integers rather than `TimeSpan`s, since `DateOnly` has no subtraction operator.
+
+The offset stopped being needed because a note stopped having an instant. `OccursAt` is gone: a note
+is addressed by `(ScheduleSpanHours, Day, PeriodOrdinal)`, and `Day` is already the caller's calendar
+day. The whole reason this document made the bounds carry a UTC offset — so the server could work out
+which local day an absolute instant belonged to — has no work left to do, and `note-days`'s
+`ToOffset` grouping was deleted rather than adapted.
+
+Everything else here still holds: the half-open rule, the caps, the nullable-though-required
+parameters, and the rejections. Read this document as the record of how the range was arrived at, not
+as the current contract.

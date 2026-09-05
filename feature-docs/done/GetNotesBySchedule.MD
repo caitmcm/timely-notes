@@ -56,3 +56,18 @@ Single project, no layer-splitting for now:
 - Real persistence (file system / SQL / NoSQL) — open question per design doc.
 - Auth/multi-user.
 - Frontend work — starts after this backend slice is in place.
+
+## Superseded — 2026-09-05, by `OneNotePerPeriod`
+
+**The note shape and the route parameters this document specifies have both changed.** `Note` no
+longer has `Guid Id` or `DateTimeOffset OccursAt`; a note is addressed by
+`(ScheduleSpanHours, Day, PeriodOrdinal)` and the response body carries `day`/`periodOrdinal` in
+place of `id`/`occursAt`. Ordering is `(Day, PeriodOrdinal)` descending — still newest first, but
+exactly rather than by a proxy instant. The route's Schedule segment is still spelled `s1`/`s3`/`s6`,
+but it binds as the span in hours (`3`), and an unknown one is now a `400` naming the parameter
+rather than a `200` with an empty list.
+
+The window is a range of plain calendar dates rather than instants carrying a UTC offset; see the
+same note appended to `NotesDateRange.MD` for why the offset stopped being needed.
+
+Read this document as the record of the first read slice, not as the current contract.

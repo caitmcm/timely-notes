@@ -116,7 +116,6 @@ function App({ now: nowProp }: AppProps) {
     setPinned(
       (current) => current && { ...current, selectedStart: currentStart(focusDay, next, now) },
     )
-    closeDialog()
   }
 
   const handleTakeNote = (period: Period) => {

@@ -52,9 +52,8 @@ test('re-anchors a pinned selection onto the current period of the new schedule'
 })
 
 /**
- * `handleScheduleChange` closes the dialog, but the picker cannot be reached while one is open:
- * a modal `<dialog>` swallows the click. So the guard is unreachable from the browser, and what is
- * asserted here is the modality that makes it so — the closing itself stays a unit concern.
+ * The picker cannot be reached while a dialog is open: a modal `<dialog>` swallows the click. This
+ * is why `handleScheduleChange` carries no close-the-dialog guard — there is no way to reach it.
  */
 test('cannot change schedule while a dialog is open — the picker is behind it', async ({
   scheduleView,

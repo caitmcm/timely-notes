@@ -188,9 +188,13 @@
   color: var(--ink-muted);
 }
 
+/* Wider, not merely recoloured: a bar the same width in a different colour is colour alone. The
+   padding gives back what the border takes, so the row's content does not shift on selection. */
 .period-row--selected {
   background: var(--accent-tint);
   border-left-color: var(--accent);
+  border-left-width: 7px;
+  padding-left: calc(0.6rem - 4px);
 }
 
 .period-row--selected .period-row__time {

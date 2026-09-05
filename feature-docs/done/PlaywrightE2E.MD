@@ -381,7 +381,8 @@ and will fail with a strict-mode violation.
       in total after one switch, not one per render.
 - [x] After switching to `1h`, the selection re-anchors to `20:00 – 21:00`.
 - [x] Switching schedule while a dialog is open closes it. *(Unreachable from a browser: the modal
-      `<dialog>` swallows the click at the picker. Asserted as that modality instead — see the notes.)*
+      `<dialog>` swallows the click at the picker. Asserted as that modality instead, and the dead
+      guard removed in follow-up — see **Follow-up**.)*
 - [x] The mount request asks for `searchFrom=2026-08-24T00:00:00+01:00` and
       `searchTo=2026-08-27T00:00:00+01:00` — a three-day, half-open window around the frozen day.
 - [x] The raw query string carries the offset percent-encoded (`%2B01:00`), so the `+` cannot be
@@ -456,9 +457,9 @@ Everything here is unreachable in jsdom; none of it is derived from a unit test.
       unchanged before and after, which is what putting it outside the scroll container buys.
 - [x] The selected row is distinguishable by more than colour — assert the accessible marker
       (`aria-selected`) and read the computed border to confirm the non-colour cue is present.
-      *(The border is **not** a non-colour cue: `.period-row` reserves the same 3px left border on
-      every row and only recolours it. The `Note` button is the cue that survives, and is what the
-      spec asserts — see the notes.)*
+      *(The border was **not** a non-colour cue: `.period-row` reserved the same 3px left border on
+      every row and only recoloured it. Fixed in follow-up — the selected row's bar is now wider as
+      well as coloured, and the spec asserts the width. See **Follow-up**.)*
 
 ### 8. The integrated lane — `e2e/backend.spec.ts` (`@integrated`)
 
@@ -640,3 +641,18 @@ A third attempt (gutting `occursAtFor`) failed the *build* rather than the suite
 parameter tripped `noUnusedParameters` — a reminder that `tsc -b` runs before the stubbed lane's server
 starts, so a type error surfaces as `Process from config.webServer was not able to start. Exit code: 2`
 rather than as a test failure.
+
+### Follow-up
+
+Both findings above were acted on immediately after this specification closed, in a separate commit.
+
+- **The selected row now carries a wider bar, not just a recoloured one.** `.period-row--selected`
+  takes `border-left-width: 7px` against the reserved 3px, and gives the 4px back as `padding-left`
+  so the row's content does not shift on selection. §7's spec asserts both halves — the border is
+  wider, and `border + padding` is unchanged. This is the first thing the acceptance layer found
+  that was a defect in the *app* rather than in a test.
+- **`handleScheduleChange`'s `closeDialog()` is gone.** Nothing could reach it: the modal `<dialog>`
+  swallows a click aimed at the picker and traps the keyboard inside itself, so the branch could
+  never run. No unit test covered it either — the one unit test in this area asserts that the
+  *calendar* stays open across a schedule change, which is a different dialog and unaffected.
+  `schedule.spec.ts` now documents the modality as the reason no guard is needed.

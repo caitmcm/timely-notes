@@ -69,6 +69,17 @@ test('holds the navigation toolbar still while the days scroll beneath it', asyn
   expect(await scheduleView.toolbar.boundingBox()).toEqual(before)
 })
 
+/** The left border and the padding that reserves room for it, in pixels. */
+const gutterOf = (row: Locator) =>
+  row.evaluate((element) => {
+    const style = getComputedStyle(element)
+
+    return {
+      border: Number.parseFloat(style.borderLeftWidth),
+      padding: Number.parseFloat(style.paddingLeft),
+    }
+  })
+
 test('distinguishes the selected row by more than colour', async ({ scheduleView }) => {
   const day = scheduleView.day(FOCUS)
   const selected = day.row('18:00 – 21:00')
@@ -77,9 +88,16 @@ test('distinguishes the selected row by more than colour', async ({ scheduleView
   await expect(selected).toHaveAttribute('aria-selected', 'true')
   await expect(other).toHaveAttribute('aria-selected', 'false')
 
-  // The Note button is the cue that survives a screen with no colour at all.
   await expect(selected.getByRole('button', { name: 'Note', exact: true })).toBeVisible()
   await expect(other.getByRole('button', { name: 'Note', exact: true })).toHaveCount(0)
+
+  // A recoloured border would be colour alone; a wider one is a cue on a monochrome screen too.
+  const marked = await gutterOf(selected)
+  const unmarked = await gutterOf(other)
+
+  expect(marked.border).toBeGreaterThan(unmarked.border)
+  // …and the row's content must not shift as the bar thickens.
+  expect(marked.border + marked.padding).toBeCloseTo(unmarked.border + unmarked.padding, 1)
 })
 
 test.describe('on a viewport too short to show the selected row', () => {

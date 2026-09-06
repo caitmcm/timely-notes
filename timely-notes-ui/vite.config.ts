@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     // The UI calls same-origin `/api/...`; the proxy forwards to the backend so no CORS config
-    // is needed. Dev-only — a production base URL is deferred.
+    // is needed. Dev-only: in a deployment `VITE_API_BASE_URL` names the API origin instead.
     proxy: {
       '/api': 'http://localhost:5186',
     },

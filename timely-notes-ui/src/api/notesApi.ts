@@ -1,6 +1,14 @@
 import { toDayKey } from '../domain/days'
 import type { DayKey, Note, ScheduleShortName } from '../types'
 
+/**
+ * Empty in dev, where the Vite proxy serves `/api` same-origin; the API's origin once the two are
+ * deployed apart. Read per call so a test can stub it.
+ */
+function apiBaseUrl(): string {
+  return (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '')
+}
+
 /** Mirrors the API's `NoteResponse`. */
 interface NoteResponse {
   day: string
@@ -32,7 +40,9 @@ export async function getNotesBySchedule(
 ): Promise<Note[]> {
   const query = new URLSearchParams({ searchFrom, searchTo })
 
-  const response = await fetch(`/api/schedules/${shortName}/notes?${query}`, { signal })
+  const response = await fetch(`${apiBaseUrl()}/api/schedules/${shortName}/notes?${query}`, {
+    signal,
+  })
 
   if (!response.ok) {
     throw new Error(`Failed to load notes for schedule ${shortName}: ${response.status}`)
@@ -66,7 +76,9 @@ export async function getNoteDaysBySchedule(
 ): Promise<NoteDay[]> {
   const query = new URLSearchParams({ searchFrom, searchTo })
 
-  const response = await fetch(`/api/schedules/${shortName}/note-days?${query}`, { signal })
+  const response = await fetch(`${apiBaseUrl()}/api/schedules/${shortName}/note-days?${query}`, {
+    signal,
+  })
 
   if (!response.ok) {
     throw new Error(`Failed to load note days for schedule ${shortName}: ${response.status}`)

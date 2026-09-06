@@ -202,3 +202,54 @@ describe('getNoteDaysBySchedule', () => {
     ).rejects.toThrow(/500/)
   })
 })
+
+describe('the API origin', () => {
+  const gridFrom = toDayKey('2026-08-31')
+  const gridTo = toDayKey('2026-10-05')
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.unstubAllEnvs()
+  })
+
+  it('calls the same origin when no API origin is configured', async () => {
+    vi.stubEnv('VITE_API_BASE_URL', undefined)
+    const fetchMock = stubFetch()
+
+    await getNotesBySchedule('s3', searchFrom, searchTo, new AbortController().signal)
+
+    expect(calledUrl(fetchMock).raw).toMatch(/^\/api\//)
+  })
+
+  it('calls the configured API origin when one is set', async () => {
+    vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.net')
+    const fetchMock = stubFetch()
+
+    await getNotesBySchedule('s3', searchFrom, searchTo, new AbortController().signal)
+
+    const { parsed } = calledUrl(fetchMock)
+    expect(parsed.origin).toBe('https://api.example.net')
+    expect(parsed.pathname).toBe('/api/schedules/s3/notes')
+  })
+
+  it('sends the note-days route to the configured origin too', async () => {
+    vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.net')
+    const fetchMock = stubFetch()
+
+    await getNoteDaysBySchedule('s1', gridFrom, gridTo, new AbortController().signal)
+
+    const { parsed } = calledUrl(fetchMock)
+    expect(parsed.origin).toBe('https://api.example.net')
+    expect(parsed.pathname).toBe('/api/schedules/s1/note-days')
+  })
+
+  // The value is pasted into a deployment setting by hand; a trailing slash is the likely typo.
+  it('tolerates a trailing slash on the configured origin', async () => {
+    vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.net/')
+    const fetchMock = stubFetch()
+
+    await getNotesBySchedule('s3', searchFrom, searchTo, new AbortController().signal)
+
+    expect(calledUrl(fetchMock).parsed.pathname).toBe('/api/schedules/s3/notes')
+  })
+})

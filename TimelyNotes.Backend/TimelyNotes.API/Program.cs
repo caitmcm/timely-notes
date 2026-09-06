@@ -11,9 +11,16 @@ builder.Services
 // Singleton so the in-memory seed survives across requests.
 builder.Services.AddSingleton<INoteRepository, InMemoryNoteRepository>();
 
+// The UI is served from its own origin, so CORS is configuration: `Cors:AllowedOrigins` is empty
+// in dev, where the Vite proxy makes every call same-origin.
+builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy
+    .WithOrigins(builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [])
+    .AllowAnyHeader()
+    .AllowAnyMethod()));
+
 var app = builder.Build();
 
-app.UseHttpsRedirection();
+app.UseCors();
 
 app.UseFastEndpoints();
 

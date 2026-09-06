@@ -10,8 +10,10 @@ engineering rules that follow from that model.
 
 ## The repo
 
-Two independent projects plus the planning docs. They are wired together **only** by the Vite
-dev proxy (`/api` → `http://localhost:5186`) — no `.env`, no shared build, no CI.
+Two independent projects plus the planning docs. In development they are wired together **only** by
+the Vite dev proxy (`/api` → `http://localhost:5186`); deployed, the UI reaches the API by its own
+origin (`VITE_API_BASE_URL`) and the API allow-lists the UI's (`Cors:AllowedOrigins`). No shared
+build.
 
 | Path | What |
 | --- | --- |
@@ -22,6 +24,7 @@ dev proxy (`/api` → `http://localhost:5186`) — no `.env`, no shared build, n
 | `TimelyNotes.Backend/` | ASP.NET Core Web API (.NET 10), own solution `TimelyNotes.Backend.slnx`. |
 | `timely-notes-ui/` | React 19 + TypeScript + Vite 8, own npm package. |
 | `run-dev.ps1` | Starts API (5186) and UI (5173) together; Ctrl+C stops both. |
+| `.github/workflows/` | CI, one workflow per project, each on its own path filter. |
 
 ## Commands
 
@@ -131,7 +134,9 @@ lists a Schedule's notes over the **half-open** `[searchFrom, searchTo)`, newest
 `400`, and an unknown `{schedule}` is a `400` naming the parameter. `GET …/note-days` answers the
 same window as `[{ day, count }]` ascending for the calendar markers — empty days omitted, capped
 at 42 (the widest month grid), grouped in the repository. In-memory store seeded across today ± 3
-days. No persistence, no auth, no Schedule endpoints, no custom middleware.
+days. No persistence, no auth, no Schedule endpoints; CORS is the only middleware, and its
+allow-list is empty until `Cors:AllowedOrigins` is configured. No HTTPS redirection: TLS
+terminates ahead of the app.
 
 **Frontend — three days, a live clock, a month calendar.** The focus day and its two neighbours
 render as day sections in one scroll container, under a fixed toolbar (*Calendar*, *Go to today*).
@@ -141,7 +146,7 @@ Markdown editing is `@mdxeditor/editor` — extend `NoteEditor`'s plugin list ra
 second editor. **Save only `console.log`s**; there is no write endpoint yet. No router, no state
 library. `timely-notes-ui/README.md` is still stock Vite template text.
 
-**Tests.** ~231 Vitest specs; above them ~63 Playwright specs in the hermetic `stubbed` lane
+**Tests.** ~235 Vitest specs; above them ~63 Playwright specs in the hermetic `stubbed` lane
 (built and previewed on `127.0.0.1:5174`, 2 workers, every `/api/**` call fulfilled from a fixture
 — note `notes*` does not match `note-days`, so both routes are stubbed) and 4 in `integrated`,
 which holds only the assertions about the two projects agreeing. Keep that lane small.

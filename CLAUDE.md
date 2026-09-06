@@ -12,8 +12,7 @@ engineering rules that follow from that model.
 
 Two independent projects plus the planning docs. In development they are wired together **only** by
 the Vite dev proxy (`/api` → `http://localhost:5186`); deployed, the UI reaches the API by its own
-origin (`VITE_API_BASE_URL`) and the API allow-lists the UI's (`Cors:AllowedOrigins`). No shared
-build.
+origin (`VITE_API_BASE_URL`); CORS is the host's business, not the app's. No shared build.
 
 | Path | What |
 | --- | --- |
@@ -134,9 +133,8 @@ lists a Schedule's notes over the **half-open** `[searchFrom, searchTo)`, newest
 `400`, and an unknown `{schedule}` is a `400` naming the parameter. `GET …/note-days` answers the
 same window as `[{ day, count }]` ascending for the calendar markers — empty days omitted, capped
 at 42 (the widest month grid), grouped in the repository. In-memory store seeded across today ± 3
-days. No persistence, no auth, no Schedule endpoints; CORS is the only middleware, and its
-allow-list is empty until `Cors:AllowedOrigins` is configured. No HTTPS redirection: TLS
-terminates ahead of the app.
+days. No persistence, no auth, no Schedule endpoints, no custom middleware — CORS and TLS both
+belong to the host. No HTTPS redirection: TLS terminates ahead of the app.
 
 **Frontend — three days, a live clock, a month calendar.** The focus day and its two neighbours
 render as day sections in one scroll container, under a fixed toolbar (*Calendar*, *Go to today*).

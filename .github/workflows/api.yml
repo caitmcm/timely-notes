@@ -14,6 +14,11 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions:
+      # OIDC: the login step trades this token for a short-lived Azure one, so there is no
+      # credential to store. The secrets below are identifiers, not passwords.
+      id-token: write
+      contents: read
     defaults:
       run:
         working-directory: TimelyNotes.Backend
@@ -24,8 +29,13 @@ jobs:
           dotnet-version: '10.x'
       - run: dotnet test
       - run: dotnet publish TimelyNotes.API -c Release -o publish
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_37F8A0E96DDE4F0CA1AD834E2F8894AD }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_F114A8DC76EC41FC942800F3BA2AD22B }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_B85AA43FD0324857BE6585A1F3AAC505 }}
       - uses: azure/webapps-deploy@v3
         with:
           app-name: timely-notes-api
-          publish-profile: ${{ secrets.AZURE_API_PUBLISH_PROFILE }}
+          # Relative to the workspace, not the job's working-directory: `uses` steps ignore it.
           package: TimelyNotes.Backend/publish

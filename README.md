@@ -5,8 +5,21 @@
 A note-taking app organised around the clock. Instead of one page per day, every hour —
 or three, or six — is its own addressable slot, and the schedule view *is* the index.
 
-**Stack:** .NET 10 · FastEndpoints · React 19 · TypeScript · Vite 8 · Vitest · Playwright ·
-xUnit v3 · GitHub Actions → Azure (OIDC, no stored credentials)
+## TL;DR
+
+- 🤖 **Built with an AI agent under a written process** — one spec document per feature, TDD
+  ticked off test by test, and a `CLAUDE.md` of invariants where every rule names the bug it
+  closed. The spec is the memory, not the transcript.
+- ⚡ **.NET 10 + FastEndpoints** — REPR endpoints, no MVC controllers, FluentValidation per
+  request, repository pattern, cancellation tokens threaded explicitly all the way down.
+- ⚛️ **React 19 + TypeScript + Vite 8** — no router, no state library, a pure domain layer, and
+  one single clock read in the entire app.
+- 🕐 **Time without instants** — a day is a branded `YYYY-MM-DD` string end to end; the server has
+  no timezone and no route will ever take an `?offset=`.
+- 🚀 **GitHub Actions → Azure** — two path-filtered workflows, tests gating both, deployed over
+  OIDC federated credentials with no stored secret.
+- ✅ **~300 tests** across xUnit v3, Vitest and Playwright, in a hermetic stubbed lane plus a
+  deliberately tiny integrated one.
 
 ---
 
@@ -51,7 +64,7 @@ Reads are done end to end. Writes (`PUT` upsert, autosave, pruning) are the slic
 
 ---
 
-## The interesting engineering
+## The stack, in detail
 
 ### Time, without instants
 

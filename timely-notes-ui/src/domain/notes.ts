@@ -18,3 +18,12 @@ export function noteExcerpt(content: string, maxLength = DEFAULT_EXCERPT_LENGTH)
 
   return collapsed.length > maxLength ? `${collapsed.slice(0, maxLength)}…` : collapsed
 }
+
+/**
+ * There is nothing to save. The one definition of empty on this side of the wire — it decides
+ * *don't create*, *delete on close* and *don't display* alike, and mirrors the server's
+ * `string.IsNullOrWhiteSpace`.
+ */
+export function isBlank(markdown: string): boolean {
+  return markdown.trim().length === 0
+}

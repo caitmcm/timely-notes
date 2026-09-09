@@ -5,20 +5,20 @@
 **Make the present moment visible on the schedule, and keep it visible.**
 
 Three connected corrections to the day view. All of them are about the same thing: the app should
-show *now* without being asked, and should look alive while it sits open.
+show _now_ without being asked, and should look alive while it sits open.
 
 1. **The current period is always distinguished.** `PeriodRow` has set `aria-current="time"` since
    `ScrollingSchedule.MD`, and `App.css` has never had a rule for it — so the current period is
    marked for a screen reader and invisible to everyone else. Selecting another row to write in
-   currently loses all trace of where *now* is. The two states are independent and must both be
+   currently loses all trace of where _now_ is. The two states are independent and must both be
    legible at once, including on the same row.
-2. **`Go to today` becomes `Go to now`.** The button already returns the *selection* to the current
+2. **`Go to today` becomes `Go to now`.** The button already returns the _selection_ to the current
    period as well as the view to the current day — un-pinning is a return to the clock, not to a
    date. The old name describes half of what it does, and reads oddly at 20:20 on the day you are
    already looking at.
 3. **A red line across the current day at the exact minute**, ticking as the minute changes. The
    period grid is a coarse instrument — an `s6` row is six hours wide — and the line is what says
-   *here, precisely*. It is also the app's pulse: something moves, so the view is evidently live
+   _here, precisely_. It is also the app's pulse: something moves, so the view is evidently live
    rather than a page rendered once and left.
 
 Together these are the answer to a schedule view that, once you pin a row, gives no sign that time
@@ -28,13 +28,13 @@ Following TDD (per `CLAUDE.md`): write a failing test before each piece of code 
 
 ## Scope decisions
 
-- **Selection and *now* are separate visual channels, and never compete.** Selection keeps what it
-  has — the thick accent left bar and the tint. *Now* is a red channel: the line, a dot at its start
+- **Selection and _now_ are separate visual channels, and never compete.** Selection keeps what it
+  has — the thick accent left bar and the tint. _Now_ is a red channel: the line, a dot at its start
   in the gutter, and the current row's gutter time in the same red and semibold. A selected current
   row shows both, with no cascade fight to arbitrate, because they touch different properties.
 - **The current row also takes a faint red tint — but only while it is not selected.** The selection
   tint wins the background when the two coincide; the line, the dot and the coloured time carry
-  *now* on their own there. This is one declared cascade rule, written in that order in the file.
+  _now_ on their own there. This is one declared cascade rule, written in that order in the file.
 - **Neither cue is colour alone.** The line and its dot are shapes, and the current time is a weight
   change as well as a colour. This is the rule `layout.spec.ts` already enforces for selection, and
   it gets the same test.
@@ -57,7 +57,7 @@ Following TDD (per `CLAUDE.md`): write a failing test before each piece of code 
   fifty-fourth of a row.
 - **`Go to now` is a rename, not a behaviour change.** `goToToday` keeps its body — `setPinned(null)`
   — and every existing assertion about what it does holds. Only the label, the handler's name and
-  the test handles change. The rollover notice keeps its wording: *It is now 25/08/2026* names the
+  the test handles change. The rollover notice keeps its wording: _It is now 25/08/2026_ names the
   day, which is what the notice is for.
 - **The `done/` specifications are not edited.** `CalendarNavigation.MD` and `LiveClock.MD` describe
   a button called `Go to today`; they are the record of what was built then, and stay as written.
@@ -77,14 +77,14 @@ and CSS.
 - **`src/domain/periods.ts`** — `isCurrentDay(day: DayKey, now: Date): boolean`, the day-level
   sibling of `isCurrentPeriod`, which is rewritten to use it rather than repeat `dayKeyOf(now)`.
 - **`src/components/NowLine.tsx`** (new) — a presentational `<div className="now-line"
-  aria-hidden="true" style={{ '--now-fraction': fraction }} />` with a dot child. Props: `fraction`.
+aria-hidden="true" style={{ '--now-fraction': fraction }} />` with a dot child. Props: `fraction`.
   It reads no clock and knows no day.
 - **`src/components/DaySection.tsx`** — renders `NowLine` inside `.day-section__periods` when
   `isCurrentDay(day, now)`, passing `dayFractionOf(now)`.
 - **`src/components/ScheduleView.tsx`** — the toolbar button's label becomes `Go to now`; the prop
   `onGoToToday` becomes `onGoToNow`.
 - **`src/App.tsx`** — `goToToday` becomes `goToNow`. `handlePickDay`'s "picking the current day is
-  *Go to now*" branch calls it under the new name; nothing else changes.
+  _Go to now_" branch calls it under the new name; nothing else changes.
 - **`src/App.css`** — a `--now` colour token (a real red, not `--danger`: an error and the present
   moment are different meanings that happen to share a hue) and a `--now-tint`; the
   `.period-row[aria-current='time']` rules; `.now-line` absolutely positioned at
@@ -128,7 +128,7 @@ and CSS.
 
 - [ ] Test first in `src/App.test.tsx`: selecting a different row leaves `aria-current="time"` on
       the current period — the marked row and the selected row are different elements, and both are
-      present. *(Guards the regression the CSS is fixing; the styling itself is asserted by E2E.)*
+      present. _(Guards the regression the CSS is fixing; the styling itself is asserted by E2E.)_
 - [ ] The `[aria-current='time']` rules: red gutter time, semibold, and the faint tint, with the
       selected rules declared after so a selected current row keeps the selection background.
 - [ ] `--now` and `--now-tint` tokens, defined for both schemes with `light-dark()`, as the existing
@@ -146,7 +146,7 @@ and CSS.
 ### 5. E2E
 
 - [ ] `e2e/fixtures/ScheduleView.ts`: `goToTodayButton` → `goToNowButton`; add `DayScope.nowLine`.
-      Update every spec that presses it. *(Setup step, no test of its own.)*
+      Update every spec that presses it. _(Setup step, no test of its own.)_
 - [ ] `day-view.spec.ts`: the line renders on the current day only — one on 25/08/2026, none on its
       neighbours.
 - [ ] `day-view.spec.ts`: it sits inside the box of the row marked `aria-current="time"`, at every
@@ -165,8 +165,8 @@ and CSS.
       line.
 - [ ] `CLAUDE.md` **Navigation**: `NowLine` in the components row; `dayFractionOf` and
       `isCurrentDay` alongside the `domain/` entry if the row names members.
-- [ ] `CLAUDE.md` **Invariants**: *the now line is placed as a fraction of the day column, never
-      from measured layout, and ticks off `useNow` alone — no second clock and no second timer.*
+- [ ] `CLAUDE.md` **Invariants**: _the now line is placed as a fraction of the day column, never
+      from measured layout, and ticks off `useNow` alone — no second clock and no second timer._
 
 ## Verify
 
@@ -188,15 +188,16 @@ Manually, with `run-dev.ps1`:
 
 ## Deferred
 
-- **A second-by-second line.** `useNow` stays a minute clock.
+- **A second-by-second line.** `useNow` stays a mi
+  nute clock.
 - **Scrolling the line into view**, on load or on the tick.
 - **A time label on the line** (`20:20` in the gutter beside the dot). The row's start time is
   already there and a second number in the same column is a crowding question, not a missing one.
-- **The neighbouring days' lines** — yesterday and tomorrow have no *now* to mark.
+- **The neighbouring days' lines** — yesterday and tomorrow have no _now_ to mark.
 - **Any change to the rollover notice**, which still names the day.
 - **Renaming `dayKeyOf`/`ordinalOf` or otherwise touching the clock-to-calendar path.** This feature
   adds a reader of `now`; it moves nothing.
 
 ## Implementation notes
 
-*(Filled in by the implementing agent.)*
+_(Filled in by the implementing agent.)_

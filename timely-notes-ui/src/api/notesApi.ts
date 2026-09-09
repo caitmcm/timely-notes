@@ -1,4 +1,5 @@
 import { toDayKey } from '../domain/days'
+import { formatPeriodAddress } from '../domain/periods'
 import type { DayKey, Note, ScheduleShortName } from '../types'
 
 /**
@@ -51,6 +52,57 @@ export async function getNotesBySchedule(
   const payload: NoteResponse[] = await response.json()
 
   return payload.map(toNote)
+}
+
+/**
+ * The note's address: a `DayKey` is already the wire form and `p4` is path-safe as written, so
+ * nothing here is converted and nothing is encoded.
+ */
+function noteUrl(shortName: ScheduleShortName, day: DayKey, ordinal: number): string {
+  return `${apiBaseUrl()}/api/schedules/${shortName}/notes/${day}/${formatPeriodAddress(ordinal)}`
+}
+
+/**
+ * Writes the note in that period — one idempotent call, whether or not a note is there already, so
+ * the client has no create-or-update branch and a repeat is harmless.
+ */
+export async function saveNote(
+  shortName: ScheduleShortName,
+  day: DayKey,
+  ordinal: number,
+  content: string,
+  signal: AbortSignal,
+): Promise<Note> {
+  const response = await fetch(noteUrl(shortName, day, ordinal), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+    signal,
+  })
+
+  if (!response.ok) {
+    throw new Error(`Failed to save note ${day}/p${ordinal}: ${response.status}`)
+  }
+
+  return toNote(await response.json())
+}
+
+/**
+ * Removes the note in that period. `signal` is optional — the exception in this file — because the
+ * closing delete is issued *as* its caller is torn down, and a signal would cancel it.
+ */
+export async function deleteNote(
+  shortName: ScheduleShortName,
+  day: DayKey,
+  ordinal: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  const response = await fetch(noteUrl(shortName, day, ordinal), { method: 'DELETE', signal })
+
+  // A 404 is the outcome asked for: the note is already gone.
+  if (!response.ok && response.status !== 404) {
+    throw new Error(`Failed to delete note ${day}/p${ordinal}: ${response.status}`)
+  }
 }
 
 /** Mirrors the API's `NoteDayResponse`. */

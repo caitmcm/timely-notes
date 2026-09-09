@@ -21,7 +21,8 @@ export interface WireNoteDay {
   count: number
 }
 
-const WRITTEN_AT = '2026-08-28T09:12:00+01:00'
+/** The audit stamp every fixture note carries — a different day from any note's own. */
+export const WRITTEN_AT = '2026-08-28T09:12:00+01:00'
 
 const note = (day: string, periodOrdinal: number, content: string): WireNote => ({
   day,

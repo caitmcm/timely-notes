@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { deleteNote, saveNote } from './api/notesApi'
 import { addDays, dayKeyOf, eachDay } from './domain/days'
 import { monthGrid, monthStartOf } from './domain/months'
 import {
@@ -37,7 +38,7 @@ interface Pinned {
 const NEIGHBOUR_DAYS = 1
 
 function App({ now: nowProp }: AppProps) {
-  const { now } = useNow(nowProp)
+  const { now, readNow } = useNow(nowProp)
 
   const [schedule, setSchedule] = useState<Schedule>(DEFAULT_SCHEDULE)
   const [pinned, setPinned] = useState<Pinned | null>(null)
@@ -53,7 +54,11 @@ function App({ now: nowProp }: AppProps) {
   const first = addDays(focusDay, -NEIGHBOUR_DAYS)
   const last = addDays(focusDay, NEIGHBOUR_DAYS)
 
-  const { notesFor, isLoaded, error } = useScheduleNotes(schedule, first, last)
+  const { notesFor, isLoaded, error, applyNote, removeNote } = useScheduleNotes(
+    schedule,
+    first,
+    last,
+  )
 
   const selectedOrdinal = pinned?.ordinal ?? ordinalOf(now, schedule.spanHours)
 
@@ -123,10 +128,20 @@ function App({ now: nowProp }: AppProps) {
     setPinned({ day, ordinal: 1 })
   }
 
-  // Placeholder until a create/update endpoint exists.
-  const handleSave = (markdown: string) => {
-    console.log(markdown, dialogSlot?.day, dialogSlot?.period.ordinal)
-    setDialogSlot(null)
+  // The address is the row the user pressed — the same before the note exists, while it does, and
+  // after it has been swept away. Nothing is stamped and nothing is minted.
+  const handleSave = async (day: DayKey, ordinal: number, content: string, signal: AbortSignal) => {
+    const note = await saveNote(schedule.shortName, day, ordinal, content, signal)
+
+    applyNote(note)
+
+    return note
+  }
+
+  const handleRemove = async (day: DayKey, ordinal: number) => {
+    // The row is already gone — the empty write cleared it — and stays gone if the delete fails.
+    removeNote(day, ordinal)
+    await deleteNote(schedule.shortName, day, ordinal)
   }
 
   return (
@@ -178,7 +193,9 @@ function App({ now: nowProp }: AppProps) {
       <NoteDialog
         slot={dialogSlot}
         spanHours={schedule.spanHours}
-        onSave={handleSave}
+        save={handleSave}
+        remove={handleRemove}
+        readNow={readNow}
         onClose={() => setDialogSlot(null)}
       />
     </div>

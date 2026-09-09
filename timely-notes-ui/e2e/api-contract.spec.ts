@@ -84,3 +84,49 @@ test.describe('under UTC+12', () => {
     await expect(scheduleView.day('26/08/2026').noteText('Tomorrow: review the schedule.')).toBeVisible()
   })
 })
+
+/**
+ * The write path, where the address now decides *which note* rather than only which window. The
+ * displayed row is the same in both zones, so its URL must be too — byte for byte.
+ */
+test.describe('the write address', () => {
+  const writeInto = async (
+    scheduleView: import('./fixtures/ScheduleView').ScheduleView,
+    page: import('@playwright/test').Page,
+    heading: string,
+  ) => {
+    const day = scheduleView.day(heading)
+    await day.row('09:00 – 12:00').click()
+    await day.noteButton.click()
+    await scheduleView.editor.click()
+    await scheduleView.editor.pressSequentially('Addressed by its period.')
+    await page.clock.runFor(2_500)
+  }
+
+  test('PUTs to the opened period’s own day and ordinal', async ({ api, page, scheduleView }) => {
+    await scheduleView.open()
+
+    await writeInto(scheduleView, page, '25/08/2026')
+
+    await expect.poll(() => api.writes.length).toBe(1)
+    expect(new URL(api.writes[0].url).pathname).toBe('/api/schedules/s3/notes/2026-08-25/p4')
+  })
+
+  test.describe('under UTC+12', () => {
+    test.use({ timezoneId: 'Pacific/Auckland' })
+
+    // The 25th is a rendered day in Auckland too, and it is the *same* note: same URL, no offset.
+    test('PUTs to the identical URL for the same displayed row', async ({
+      api,
+      page,
+      scheduleView,
+    }) => {
+      await scheduleView.open()
+
+      await writeInto(scheduleView, page, '25/08/2026')
+
+      await expect.poll(() => api.writes.length).toBe(1)
+      expect(new URL(api.writes[0].url).pathname).toBe('/api/schedules/s3/notes/2026-08-25/p4')
+    })
+  })
+})

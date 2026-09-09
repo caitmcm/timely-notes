@@ -28,6 +28,14 @@ export class ScheduleView {
   }
 
 
+  /**
+   * Loads the page again without re-pausing: a spec that has run the clock forward is already past
+   * the frozen instant, and pausing back onto it is a fast-forward into the past.
+   */
+  async reload() {
+    await this.page.goto('/')
+  }
+
   /** One day's section, scoped by the heading its period list is labelled with. */
   day(heading: string): DayScope {
     return new DayScope(
@@ -85,12 +93,14 @@ export class ScheduleView {
     return this.dialog.getByRole('textbox')
   }
 
-  get save(): Locator {
-    return this.dialog.getByRole('button', { name: 'Save' })
+  /** The dialog's only button: autosave leaves nothing for Save or Cancel to mean. */
+  get done(): Locator {
+    return this.dialog.getByRole('button', { name: 'Done' })
   }
 
-  get cancel(): Locator {
-    return this.dialog.getByRole('button', { name: 'Cancel' })
+  /** Saved HH:MM, Saving… or Not saved — retrying; empty until a first write. */
+  get saveStatus(): Locator {
+    return this.dialog.getByRole('status')
   }
 
   /**

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getNotesBySchedule } from '../api/notesApi'
 import { addDays, chunkRun, contiguousRuns, eachDay } from '../domain/days'
+import { isBlank } from '../domain/notes'
 import type { DayKey, Note, Schedule, ScheduleShortName } from '../types'
 
 /** Days per request: inside the server's 7-day maximum, with room for a rounding mistake. */
@@ -20,6 +21,10 @@ export interface ScheduleNotes {
   /** False while a day is still in flight; a day that came back empty is loaded, not missing. */
   isLoaded: (day: DayKey) => boolean
   error: string | null
+  /** Puts a written note in its day's bucket, replacing whatever that period held. No refetch. */
+  applyNote: (note: Note) => void
+  /** Takes a deleted note out of its bucket. No refetch. */
+  removeNote: (day: DayKey, ordinal: number) => void
 }
 
 function bucketByDay(days: DayKey[], notes: Note[]): Map<DayKey, Note[]> {
@@ -112,9 +117,47 @@ export function useScheduleNotes(
 
   const days = cache.shortName === schedule.shortName ? cache.days : NO_DAYS
 
-  const notesFor = useCallback((day: DayKey) => days.get(day) ?? NO_NOTES, [days])
+  // A blank note is never rendered, wherever it came from: the empty PUT this session made is
+  // what clears the row, with no wait on the DELETE and no refetch.
+  const notesFor = useCallback(
+    (day: DayKey) => (days.get(day) ?? NO_NOTES).filter((note) => !isBlank(note.content)),
+    [days],
+  )
   const isLoaded = useCallback((day: DayKey) => days.has(day), [days])
   const error = failure?.shortName === schedule.shortName ? failure.message : null
 
-  return useMemo(() => ({ notesFor, isLoaded, error }), [notesFor, isLoaded, error])
+  /** Rewrites one day's bucket. A day that is not cached is left alone: it is fetched complete. */
+  const editDay = useCallback(
+    (day: DayKey, edit: (notes: Note[]) => Note[]) =>
+      setCache((held) => {
+        const bucket = held.days.get(day)
+
+        if (!bucket) {
+          return held
+        }
+
+        return { ...held, days: new Map([...held.days, [day, edit(bucket)]]) }
+      }),
+    [],
+  )
+
+  const applyNote = useCallback(
+    (note: Note) =>
+      editDay(note.day, (notes) => [
+        ...notes.filter((held) => held.ordinal !== note.ordinal),
+        note,
+      ]),
+    [editDay],
+  )
+
+  const removeNote = useCallback(
+    (day: DayKey, ordinal: number) =>
+      editDay(day, (notes) => notes.filter((held) => held.ordinal !== ordinal)),
+    [editDay],
+  )
+
+  return useMemo(
+    () => ({ notesFor, isLoaded, error, applyNote, removeNote }),
+    [notesFor, isLoaded, error, applyNote, removeNote],
+  )
 }

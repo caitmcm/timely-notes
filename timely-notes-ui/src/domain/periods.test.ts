@@ -3,6 +3,8 @@ import {
   buildPeriods,
   findCurrentPeriod,
   formatDayHeading,
+  formatPeriodAddress,
+  formatTimeOfDay,
   formatPeriodLabel,
   formatPeriodStart,
   isCurrentPeriod,
@@ -177,5 +179,28 @@ describe('formatDayHeading', () => {
   it('reads the day back as a British date', () => {
     expect(formatDayHeading(day('2026-08-25'))).toBe('25/08/2026')
     expect(formatDayHeading(day('2027-01-02'))).toBe('02/01/2027')
+  })
+})
+
+describe('formatTimeOfDay', () => {
+  it('reads an instant as the wall clock does', () => {
+    expect(formatTimeOfDay(new Date(2026, 7, 25, 12, 3))).toBe('12:03')
+  })
+
+  it('pads both halves', () => {
+    expect(formatTimeOfDay(new Date(2026, 7, 25, 9, 5))).toBe('09:05')
+  })
+})
+
+describe('formatPeriodAddress', () => {
+  it('spells a period the one way the server accepts', () => {
+    expect(formatPeriodAddress(4)).toBe('p4')
+    expect(formatPeriodAddress(24)).toBe('p24')
+  })
+
+  // No padding, no sign, no capital: the server rejects p04, p+4 and P4 as spellings of nothing.
+  it('pads nothing and signs nothing', () => {
+    expect(formatPeriodAddress(4)).not.toBe('p04')
+    expect(formatPeriodAddress(4)).toMatch(/^p[1-9][0-9]*$/)
   })
 })

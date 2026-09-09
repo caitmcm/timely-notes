@@ -11,6 +11,9 @@ builder.Services
 // Singleton so the in-memory seed survives across requests.
 builder.Services.AddSingleton<INoteRepository, InMemoryNoteRepository>();
 
+// Handlers never read the clock directly, so a server-set stamp can be asserted rather than approximated.
+builder.Services.AddSingleton(TimeProvider.System);
+
 var app = builder.Build();
 
 app.UseFastEndpoints();

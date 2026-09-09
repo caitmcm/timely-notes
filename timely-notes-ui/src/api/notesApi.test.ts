@@ -1,4 +1,4 @@
-import { getNoteDaysBySchedule, getNotesBySchedule } from './notesApi'
+import { deleteNote, getNoteDaysBySchedule, getNotesBySchedule, saveNote } from './notesApi'
 import { toDayKey } from '../domain/days'
 import { EITHER_SIDE_OF_GREENWICH, inTimezone } from '../test/timezone'
 
@@ -251,5 +251,180 @@ describe('the API origin', () => {
     await getNotesBySchedule('s3', searchFrom, searchTo, new AbortController().signal)
 
     expect(calledUrl(fetchMock).parsed.pathname).toBe('/api/schedules/s3/notes')
+  })
+})
+
+describe('saveNote', () => {
+  const day = toDayKey('2026-08-25')
+
+  const createdResponse = (body: unknown) =>
+    ({ ok: true, status: 201, json: async () => body }) as Response
+
+  /** A write answers with the one note it wrote, not with a list. */
+  const stubSave = () => {
+    const fetchMock = vi.fn().mockResolvedValue(createdResponse(wireNote({ periodOrdinal: 4 })))
+    vi.stubGlobal('fetch', fetchMock)
+
+    return fetchMock
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('PUTs to the period the note is addressed by', async () => {
+    const fetchMock = stubSave()
+
+    await saveNote('s3', day, 4, 'Written.', new AbortController().signal)
+
+    const { parsed } = calledUrl(fetchMock)
+    // Structural, so the assertion holds in any timezone: nothing here depends on an offset.
+    const segments = parsed.pathname.split('/')
+    expect(segments.slice(1, 4)).toEqual(['api', 'schedules', 's3'])
+    expect(segments[4]).toBe('notes')
+    expect(segments[5]).toBe(day)
+    expect(segments[6]).toBe('p4')
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: 'PUT' })
+  })
+
+  it('leaves the path needing no escape, and gives it none', async () => {
+    const fetchMock = stubSave()
+
+    await saveNote('s3', day, 4, 'Written.', new AbortController().signal)
+
+    expect(calledUrl(fetchMock).raw).not.toMatch(/%/)
+  })
+
+  // The address now decides *which* note, so a Date creeping back in would write to the wrong one.
+  it.each(EITHER_SIDE_OF_GREENWICH)('PUTs to the identical URL in %s', async (zone) => {
+    const fetchMock = stubSave()
+
+    await saveNote('s3', day, 4, 'Written.', new AbortController().signal)
+    const here = calledUrl(fetchMock).raw
+
+    let there = ''
+    await inTimezone(zone, async () => {
+      await saveNote('s3', day, 4, 'Written.', new AbortController().signal)
+      there = fetchMock.mock.calls[1][0]
+    })
+
+    expect(there).toBe(here)
+  })
+
+  it('sends a body carrying content and nothing else', async () => {
+    const fetchMock = stubSave()
+
+    await saveNote('s3', day, 4, 'Written.', new AbortController().signal)
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body).toEqual({ content: 'Written.' })
+  })
+
+  it('sends empty content as content, not as an omission', async () => {
+    const fetchMock = stubSave()
+
+    await saveNote('s3', day, 4, '', new AbortController().signal)
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ content: '' })
+  })
+
+  it('forwards the abort signal to fetch', async () => {
+    const fetchMock = stubSave()
+    const { signal } = new AbortController()
+
+    await saveNote('s3', day, 4, 'Written.', signal)
+
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ signal })
+  })
+
+  // The client wanted a note in that period and it has one; which path the server took is its business.
+  it.each([
+    ['created', createdResponse],
+    ['replaced', okResponse],
+  ])('parses a %s response the same way', async (_outcome, respond) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(respond(wireNote({ periodOrdinal: 4 }))))
+
+    const note = await saveNote('s3', day, 4, 'Written.', new AbortController().signal)
+
+    expect(note.day).toBe('2026-08-25')
+    expect(note.ordinal).toBe(4)
+    expect(note.createdAt).toBeInstanceOf(Date)
+  })
+
+  it('rejects on a non-2xx response', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) } as Response),
+    )
+
+    await expect(
+      saveNote('s3', day, 4, 'Written.', new AbortController().signal),
+    ).rejects.toThrow(/500/)
+  })
+})
+
+describe('deleteNote', () => {
+  const day = toDayKey('2026-08-25')
+
+  const noContent = () => ({ ok: true, status: 204 }) as Response
+  const notFound = () => ({ ok: false, status: 404 }) as Response
+
+  const stubDelete = (response: Response = noContent()) => {
+    const fetchMock = vi.fn().mockResolvedValue(response)
+    vi.stubGlobal('fetch', fetchMock)
+
+    return fetchMock
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('DELETEs the period, with no body', async () => {
+    const fetchMock = stubDelete()
+
+    await deleteNote('s3', day, 4)
+
+    const segments = calledUrl(fetchMock).parsed.pathname.split('/')
+    expect(segments[5]).toBe(day)
+    expect(segments[6]).toBe('p4')
+    expect(fetchMock.mock.calls[0][1].method).toBe('DELETE')
+    expect(fetchMock.mock.calls[0][1].body).toBeUndefined()
+  })
+
+  it('resolves on 204', async () => {
+    stubDelete()
+
+    await expect(deleteNote('s3', day, 4)).resolves.toBeUndefined()
+  })
+
+  // It is already gone, which is the outcome asked for.
+  it('treats a 404 as success', async () => {
+    stubDelete(notFound())
+
+    await expect(deleteNote('s3', day, 4)).resolves.toBeUndefined()
+  })
+
+  it('rejects on any other failure', async () => {
+    stubDelete({ ok: false, status: 500 } as Response)
+
+    await expect(deleteNote('s3', day, 4)).rejects.toThrow(/500/)
+  })
+
+  it('is callable with no signal at all', async () => {
+    const fetchMock = stubDelete()
+
+    await deleteNote('s3', day, 4)
+
+    expect(fetchMock.mock.calls[0][1].signal).toBeUndefined()
+  })
+
+  it('forwards a signal when it is given one', async () => {
+    const fetchMock = stubDelete()
+    const { signal } = new AbortController()
+
+    await deleteNote('s3', day, 4, signal)
+
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ signal })
   })
 })

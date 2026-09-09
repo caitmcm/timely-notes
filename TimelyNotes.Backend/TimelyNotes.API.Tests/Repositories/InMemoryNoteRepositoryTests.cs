@@ -329,6 +329,266 @@ public class InMemoryNoteRepositoryTests
         Assert.Empty(counts);
     }
 
+    // --- Writes -------------------------------------------------------------------------------
+
+    /// <summary>A period the seed leaves empty for every Schedule, so a write never collides.</summary>
+    private static readonly DateOnly WriteDay = Today.AddDays(200);
+
+    private static Note NoteAt(
+        int scheduleSpanHours,
+        DateOnly day,
+        int periodOrdinal,
+        string content,
+        DateTimeOffset? at = null)
+    {
+        var stamp = at ?? new DateTimeOffset(2026, 8, 25, 9, 30, 0, TimeSpan.Zero);
+
+        return new Note
+        {
+            ScheduleSpanHours = scheduleSpanHours,
+            Day = day,
+            PeriodOrdinal = periodOrdinal,
+            Content = content,
+            CreatedAt = stamp,
+            ModifiedAt = stamp
+        };
+    }
+
+    private static Task<IReadOnlyList<Note>> NotesAround(
+        InMemoryNoteRepository repository, int scheduleSpanHours, DateOnly day) =>
+        repository.GetBySchedule(
+            scheduleSpanHours, day, day.AddDays(1), TestContext.Current.CancellationToken);
+
+    [Fact]
+    public async Task Upsert_CreatesANoteInAnEmptyPeriod()
+    {
+        var repository = new InMemoryNoteRepository();
+
+        var result = await repository.Upsert(
+            NoteAt(1, WriteDay, 9, "New."), TestContext.Current.CancellationToken);
+
+        Assert.True(result.Created);
+        Assert.Equal("New.", result.Note.Content);
+
+        var note = Assert.Single(await NotesAround(repository, 1, WriteDay));
+        Assert.Equal(9, note.PeriodOrdinal);
+        Assert.Equal("New.", note.Content);
+    }
+
+    [Fact]
+    public async Task Upsert_LeavesTheSeedAlone()
+    {
+        var repository = new InMemoryNoteRepository();
+        var before = (await AllSeeded(repository)).Count;
+
+        await repository.Upsert(
+            NoteAt(1, WriteDay, 9, "New."), TestContext.Current.CancellationToken);
+
+        Assert.Equal(before, (await AllSeeded(repository)).Count);
+    }
+
+    [Fact]
+    public async Task Upsert_ReplacesTheContentAndModifiedAt_LeavingTheRestOfTheNoteAlone()
+    {
+        var repository = new InMemoryNoteRepository();
+        var createdAt = new DateTimeOffset(2026, 8, 25, 9, 0, 0, TimeSpan.Zero);
+        var modifiedAt = createdAt.AddHours(2);
+
+        await repository.Upsert(
+            NoteAt(1, WriteDay, 9, "First.", createdAt), TestContext.Current.CancellationToken);
+        var result = await repository.Upsert(
+            NoteAt(1, WriteDay, 9, "Second.", modifiedAt), TestContext.Current.CancellationToken);
+
+        Assert.False(result.Created);
+
+        var note = Assert.Single(await NotesAround(repository, 1, WriteDay));
+        Assert.Equal("Second.", note.Content);
+        Assert.Equal(modifiedAt, note.ModifiedAt);
+        // The create path's stamp survives: only a create honours the caller's CreatedAt.
+        Assert.Equal(createdAt, note.CreatedAt);
+        Assert.Equal(WriteDay, note.Day);
+        Assert.Equal(9, note.PeriodOrdinal);
+        Assert.Equal(1, note.ScheduleSpanHours);
+    }
+
+    /// <summary>The property the whole write path rests on.</summary>
+    [Fact]
+    public async Task Upsert_SentTwice_LeavesExactlyOneNote()
+    {
+        var repository = new InMemoryNoteRepository();
+        var note = NoteAt(1, WriteDay, 9, "Same.");
+
+        await repository.Upsert(note, TestContext.Current.CancellationToken);
+        await repository.Upsert(note, TestContext.Current.CancellationToken);
+
+        Assert.Single(await NotesAround(repository, 1, WriteDay));
+    }
+
+    [Fact]
+    public async Task Upsert_TreatsTheSamePeriodUnderAnotherScheduleAsADifferentNote()
+    {
+        var repository = new InMemoryNoteRepository();
+
+        await repository.Upsert(
+            NoteAt(1, WriteDay, 4, "Hourly."), TestContext.Current.CancellationToken);
+        await repository.Upsert(
+            NoteAt(3, WriteDay, 4, "Three-hourly."), TestContext.Current.CancellationToken);
+
+        Assert.Equal("Hourly.", Assert.Single(await NotesAround(repository, 1, WriteDay)).Content);
+        Assert.Equal(
+            "Three-hourly.", Assert.Single(await NotesAround(repository, 3, WriteDay)).Content);
+    }
+
+    /// <summary>All three parts of the key are compared: change any one and it is another note.</summary>
+    [Theory]
+    [InlineData(3, 0, 9)]
+    [InlineData(1, 1, 9)]
+    [InlineData(1, 0, 10)]
+    public async Task Upsert_ReachesADifferentNote_WhenAnyPartOfTheAddressDiffers(
+        int scheduleSpanHours, int dayOffset, int periodOrdinal)
+    {
+        var repository = new InMemoryNoteRepository();
+
+        await repository.Upsert(
+            NoteAt(1, WriteDay, 9, "Original."), TestContext.Current.CancellationToken);
+        var result = await repository.Upsert(
+            NoteAt(scheduleSpanHours, WriteDay.AddDays(dayOffset), periodOrdinal, "Other."),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.Created);
+
+        var original = Assert.Single(
+            await NotesAround(repository, 1, WriteDay), note => note.PeriodOrdinal == 9);
+        Assert.Equal("Original.", original.Content);
+    }
+
+    [Fact]
+    public async Task Delete_RemovesTheNoteFromBothReads()
+    {
+        var repository = new InMemoryNoteRepository();
+        await repository.Upsert(
+            NoteAt(1, WriteDay, 9, "Doomed."), TestContext.Current.CancellationToken);
+
+        var deleted = await repository.Delete(1, WriteDay, 9, TestContext.Current.CancellationToken);
+
+        Assert.True(deleted);
+        Assert.Empty(await NotesAround(repository, 1, WriteDay));
+        Assert.Empty(await repository.GetDayCountsBySchedule(
+            1, WriteDay, WriteDay.AddDays(1), TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task Delete_ReportsFalse_ForAPeriodHoldingNothing()
+    {
+        var repository = new InMemoryNoteRepository();
+
+        Assert.False(
+            await repository.Delete(1, WriteDay, 9, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task Delete_LeavesTheSamePeriodUnderAnotherScheduleAlone()
+    {
+        var repository = new InMemoryNoteRepository();
+        await repository.Upsert(
+            NoteAt(1, WriteDay, 4, "Hourly."), TestContext.Current.CancellationToken);
+        await repository.Upsert(
+            NoteAt(3, WriteDay, 4, "Three-hourly."), TestContext.Current.CancellationToken);
+
+        await repository.Delete(1, WriteDay, 4, TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            "Three-hourly.", Assert.Single(await NotesAround(repository, 3, WriteDay)).Content);
+    }
+
+    // --- Empty notes are stored but never read ------------------------------------------------
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("\n\n")]
+    public async Task GetBySchedule_OmitsANoteWhoseContentIsEmpty(string content)
+    {
+        var repository = new InMemoryNoteRepository();
+        await repository.Upsert(
+            NoteAt(1, WriteDay, 9, content), TestContext.Current.CancellationToken);
+
+        Assert.Empty(await NotesAround(repository, 1, WriteDay));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("\n\n")]
+    public async Task GetDayCountsBySchedule_OmitsADayWhoseOnlyNoteIsEmpty(string content)
+    {
+        var repository = new InMemoryNoteRepository();
+        await repository.Upsert(
+            NoteAt(1, WriteDay, 9, content), TestContext.Current.CancellationToken);
+
+        var counts = await repository.GetDayCountsBySchedule(
+            1, WriteDay, WriteDay.AddDays(1), TestContext.Current.CancellationToken);
+
+        // Absent entirely rather than present as a zero: a marker would render a blank day.
+        Assert.Empty(counts);
+    }
+
+    [Fact]
+    public async Task GetDayCountsBySchedule_CountsOnlyTheReadableNotesOfADay()
+    {
+        var repository = new InMemoryNoteRepository();
+        await repository.Upsert(
+            NoteAt(1, WriteDay, 9, "Readable."), TestContext.Current.CancellationToken);
+        await repository.Upsert(
+            NoteAt(1, WriteDay, 10, "   "), TestContext.Current.CancellationToken);
+
+        var counts = await repository.GetDayCountsBySchedule(
+            1, WriteDay, WriteDay.AddDays(1), TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, Assert.Single(counts).Count);
+    }
+
+    /// <summary>The filter judges emptiness, not whether the writing was worth it.</summary>
+    [Theory]
+    [InlineData("#")]
+    [InlineData("-")]
+    public async Task GetBySchedule_KeepsANoteThatIsSmallButNotEmpty(string content)
+    {
+        var repository = new InMemoryNoteRepository();
+        await repository.Upsert(
+            NoteAt(1, WriteDay, 9, content), TestContext.Current.CancellationToken);
+
+        Assert.Equal(content, Assert.Single(await NotesAround(repository, 1, WriteDay)).Content);
+    }
+
+    /// <summary>An emptied note is hidden, not forgotten: writing content again brings it back.</summary>
+    [Fact]
+    public async Task Upsert_OverAnEmptiedNote_ReplacesRatherThanCreates()
+    {
+        var repository = new InMemoryNoteRepository();
+        await repository.Upsert(
+            NoteAt(1, WriteDay, 9, "First."), TestContext.Current.CancellationToken);
+        await repository.Upsert(
+            NoteAt(1, WriteDay, 9, ""), TestContext.Current.CancellationToken);
+
+        var result = await repository.Upsert(
+            NoteAt(1, WriteDay, 9, "Back."), TestContext.Current.CancellationToken);
+
+        Assert.False(result.Created);
+        Assert.Equal("Back.", Assert.Single(await NotesAround(repository, 1, WriteDay)).Content);
+    }
+
+    [Fact]
+    public async Task Delete_RemovesAnEmptyNote()
+    {
+        var repository = new InMemoryNoteRepository();
+        await repository.Upsert(
+            NoteAt(1, WriteDay, 9, ""), TestContext.Current.CancellationToken);
+
+        Assert.True(await repository.Delete(1, WriteDay, 9, TestContext.Current.CancellationToken));
+        Assert.False(await repository.Delete(1, WriteDay, 9, TestContext.Current.CancellationToken));
+    }
+
     private static async Task<IReadOnlyList<Note>> AllSeeded(InMemoryNoteRepository repository)
     {
         var notes = new List<Note>();

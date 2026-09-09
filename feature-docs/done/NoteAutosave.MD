@@ -200,8 +200,9 @@ once each slice is implemented.
   server-set times in a testable path, so register `TimeProvider.System` and inject it rather
   than calling `DateTimeOffset.Now` in a handler — that is the difference between asserting the
   stamps and asserting they are "roughly now".
-- **The in-memory store becomes writable, so it needs a lock.** It is a singleton and reads
-  currently walk a bare `List<Note>` unsynchronised. Safe only while nothing writes.
+- **The in-memory store becomes writable and stays unsynchronised.** One user, one dev-only
+  store a restart clears: there is no concurrency here to protect against. Deferred to whatever
+  replaces this class.
 - **Local cache updates, no refetch.** A created, updated or deleted note is applied to
   `useScheduleNotes`'s own cache, so the row appears, changes or disappears immediately.
   Refetching a three-day window after a keystroke batch would be absurd — and is a request.
@@ -213,10 +214,8 @@ once each slice is implemented.
 - `Models/Note.cs` — unchanged in shape. Stays a `class`, not a `record`: an update copies it
   explicitly, and value equality would change what the existing repository tests assert.
 - `Repositories/INoteRepository.cs` / `InMemoryNoteRepository.cs` — `Upsert` and `Delete` join
-  the two reads; both reads gain the empty-content filter; `_notes` gets a lock covering every
-  one of them. `Upsert` must decide *and* write inside one critical section, or two saves racing
-  on an empty period both create and the defect `OneNotePerPeriod.MD` fixed comes back through
-  the write path.
+  the two reads; both reads gain the empty-content filter. No lock — `_notes` stays a bare
+  `List<Note>` and `Upsert` is a plain find-then-write.
 - `Endpoints/Notes/` — `UpsertNoteRequest` / `UpsertNoteValidator` / `UpsertNoteEndpoint` and
   `DeleteNoteRequest` / `DeleteNoteEndpoint`, one type per file beside the existing
   `GetNotesBySchedule*`. Both take `ScheduleShortName`, `Day` and `Ordinal` from the route; the
@@ -272,83 +271,79 @@ anywhere.
 
 ### 1. Server clock seam (prerequisite)
 
-- [ ] Test first: an upsert endpoint test using `FakeTimeProvider` asserts the created note's
+- [x] Test first: an upsert endpoint test using `FakeTimeProvider` asserts the created note's
       `CreatedAt` is exactly the fake instant — impossible before this item exists.
-- [ ] Add `Microsoft.Extensions.TimeProvider.Testing` to `TimelyNotes.API.Tests`.
-- [ ] Register `TimeProvider.System` as a singleton in `Program.cs`; endpoints take it by
+- [x] Add `Microsoft.Extensions.TimeProvider.Testing` to `TimelyNotes.API.Tests`.
+- [x] Register `TimeProvider.System` as a singleton in `Program.cs`; endpoints take it by
       constructor injection. No handler calls `DateTimeOffset.Now` directly.
 
 ### 2. Repository — reads hide empty notes (`TimelyNotes.API/Repositories`)
 
-- [ ] Test first, on **both** reads: a note whose content is empty, whitespace-only or null is
+- [x] Test first, on **both** reads: a note whose content is empty, whitespace-only or null is
       absent from `GetBySchedule`; the same note contributes nothing to
       `GetDayCountsBySchedule`, and a day whose *only* note is empty is absent from the counts
       entirely rather than reported as `0`; a note containing just `#` or `-` is **kept** — the
       filter judges emptiness, not whether the writing was worth it.
-- [ ] Filter with `string.IsNullOrWhiteSpace` in both repository methods, expressed once as a
+- [x] Filter with `string.IsNullOrWhiteSpace` in both repository methods, expressed once as a
       private predicate so the two reads cannot drift apart.
-- [ ] Note in the interface docs that an empty note is retained but unreadable, and why: the
+- [x] Note in the interface docs that an empty note is retained but unreadable, and why: the
       client's delete is best-effort, and this is what keeps a stray one invisible.
 
 ### 3. Repository — writes (`TimelyNotes.API/Repositories`)
 
-- [ ] Test first, covering: upserting into an empty period **creates**, and the note is returned
+- [x] Test first, covering: upserting into an empty period **creates**, and the note is returned
       by a later `GetBySchedule` whose window contains it, without disturbing the seed;
       upserting the same period again **replaces the content** and `ModifiedAt`, leaving
       `Day`, `Ordinal`, `CreatedAt` and `ScheduleShortName` untouched; the same upsert sent twice
       leaves exactly one note; the same period under a *different* Schedule is a different note
       and neither touches the other; `Delete` removes a note from both reads and reports `false`
       for a period holding none.
-- [ ] Test first on the address itself: the same `(Schedule, Day, Ordinal)` always reaches the
+- [x] Test first on the address itself: the same `(Schedule, Day, Ordinal)` always reaches the
       same note, and changing any one of the three reaches a different one. Under the instant key
       this item had to prove that two spellings of one instant matched; there is only one
       spelling now, so what is worth asserting is that all three parts of the key are compared.
-- [ ] `Task<UpsertResult> Upsert(Note note, CancellationToken ct)` on `INoteRepository` — `ct`
+- [x] `Task<UpsertResult> Upsert(Note note, CancellationToken ct)` on `INoteRepository` — `ct`
       with no default, per `CLAUDE.md`. The result carries the stored note and says whether it
       *created* or *replaced*, so the endpoint can pick its status code without a second query.
       Document that the caller supplies a fully-stamped note, that `CreatedAt` is honoured only
       on the create path, and that replacement is last-write-wins by design.
-- [ ] `Task<bool> Delete(string scheduleShortName, DateOnly day, int ordinal, CancellationToken
+- [x] `Task<bool> Delete(string scheduleShortName, DateOnly day, int ordinal, CancellationToken
       ct)` — `false` when that period held nothing.
-- [ ] Implement both in `InMemoryNoteRepository`; the replace path writes an explicit copy, so
+- [x] Implement both in `InMemoryNoteRepository`; the replace path writes an explicit copy, so
       `Note` keeps its `init`-only members.
-- [ ] Guard `_notes` with a lock across every read and write — the store is a singleton and,
-      from this feature on, concurrently mutated. **The upsert's decide-then-write must be one
-      critical section**, or two saves racing on an empty period both create and one period ends
-      up with two notes again. Add a test firing concurrent upserts at the same period asserting
-      exactly one note results, and another that concurrent upserts at *different* periods all
-      land.
+- [x] **No lock and no concurrency tests** — see *Deferred*. `Upsert` finds and writes in the one
+      method, which is the natural way to write it anyway.
 
 ### 4. Upsert endpoint (`TimelyNotes.API/Endpoints/Notes`)
 
-- [ ] Test first, on the create path: `201` with the note in the body; the response `day` and
+- [x] Test first, on the create path: `201` with the note in the body; the response `day` and
       `ordinal` are the ones from the route; `createdAt` and `modifiedAt` are the
       `FakeTimeProvider` instant and equal to each other; the note then appears in a `GET` for
       a window containing it.
-- [ ] Test first, on the replace path: `200` with the new content; `modifiedAt` advances to the
+- [x] Test first, on the replace path: `200` with the new content; `modifiedAt` advances to the
       fake instant while `createdAt`, `day` and `ordinal` do not move; two writes in a row both apply
       (last-write-wins).
-- [ ] Test first, on idempotency: the identical request sent twice yields `201` then `200` and
+- [x] Test first, on idempotency: the identical request sent twice yields `201` then `200` and
       leaves exactly one note. This is the property the whole design rests on, so it is asserted
       directly rather than inferred from the two paths above.
-- [ ] Test first, on rejection: `400` for an ordinal the named Schedule does not have (`p9` on
+- [x] Test first, on rejection: `400` for an ordinal the named Schedule does not have (`p9` on
       `s3`, and `p0`), for an unknown Schedule, for an unparseable day, for null content and for
       over-long content; **empty content is accepted**, because
       create-on-first-content and save-the-clearing both depend on it.
-- [ ] `UpsertNoteRequest`: `ScheduleShortName`, `Day` and `Ordinal` from the route — `Day` as
+- [x] `UpsertNoteRequest`: `ScheduleShortName`, `Day` and `Ordinal` from the route — `Day` as
       `DateOnly?` and `Ordinal` as `int?`, nullable so a value that does not bind fails
       `NotNull()` and names itself, the lesson recorded in `NotesDateRange.MD` — and `Content`
       (`string?`) from the body. **No day or ordinal in the body**: the slot is the address, and
       the request type is again where that is enforced. Stripping the route's `p` prefix happens
       in one place.
-- [ ] `UpsertNoteValidator`: `Day` and `Ordinal` required, the Schedule known and the ordinal in
+- [x] `UpsertNoteValidator`: `Day` and `Ordinal` required, the Schedule known and the ordinal in
       range via `Schedules.IsValidOrdinal` from `OneNotePerPeriod.MD`; `Content` not null;
       content no longer than a stated maximum, expressed as one constant shared with nothing yet
       but named anyway.
-- [ ] `UpsertNoteEndpoint` — `Put("api/schedules/{scheduleShortName}/notes/{day}/p{ordinal}")`,
+- [x] `UpsertNoteEndpoint` — `Put("api/schedules/{scheduleShortName}/notes/{day}/p{ordinal}")`,
       builds the `Note` from the route and `TimeProvider.GetUtcNow()`, calls `Upsert`, and sends
       `201` or `200` from the result. Thread `ct` through every call including the send.
-- [ ] `Summary` and `Description` covering what the caller cannot guess: that the URL's period
+- [x] `Summary` and `Description` covering what the caller cannot guess: that the URL's period
       **is** the note's identity; that the ordinal is 1-based and bounded by the Schedule's
       period count; that the day is the caller's own calendar date; that
       `createdAt`/`modifiedAt` are server-set and ignored if sent; and that repeating the
@@ -356,202 +351,202 @@ anywhere.
 
 ### 5. Delete endpoint (`TimelyNotes.API/Endpoints/Notes`)
 
-- [ ] Test first: `204` and the note is gone from both read routes; `404` for a period holding
+- [x] Test first: `204` and the note is gone from both read routes; `404` for a period holding
       none; the same period under another Schedule is untouched; deleting twice gives `204` then
       `404`.
-- [ ] `DeleteNoteRequest` (route only) and `DeleteNoteEndpoint` —
+- [x] `DeleteNoteRequest` (route only) and `DeleteNoteEndpoint` —
       `Delete("api/schedules/{scheduleShortName}/notes/{day}/p{ordinal}")`, `204` or `404`,
       `ct` threaded.
-- [ ] Add upsert and delete requests to `TimelyNotes.API.http`, including an empty-content
+- [x] Add upsert and delete requests to `TimelyNotes.API.http`, including an empty-content
       write, a repeat of the same write, and an out-of-range ordinal, so the rules are
       exercisable by hand.
 
 ### 6. API client (`src/api/notesApi.ts`)
 
-- [ ] Test first for each: the method, the URL, the JSON body, the parsed result, a non-2xx
+- [x] Test first for each: the method, the URL, the JSON body, the parsed result, a non-2xx
       throw, and abort behaviour — matching how `getNotesBySchedule` is already tested.
-- [ ] `saveNote(shortName, day, ordinal, content, signal)` — `PUT` to
+- [x] `saveNote(shortName, day, ordinal, content, signal)` — `PUT` to
       `/api/schedules/{shortName}/notes/{date}/p{ordinal}`, body `{ content }`, returns the
       parsed `Note`. Assert the path **structurally** (split it, compare the segments to the
       `DayKey` and ordinal passed in) and assert it under a non-UK timezone: the URL must be
       *identical*, since nothing in it depends on an offset. A `Date` creeping back into this
       path is what that second assertion catches.
-- [ ] A test asserts the path needs no encoding and gets none — a date and `p4` are path-safe as
+- [x] A test asserts the path needs no encoding and gets none — a date and `p4` are path-safe as
       written. Stated rather than assumed, because the encoding trap `notesApi` documents for
       query strings is exactly one segment away.
-- [ ] A test asserts the body carries **only** `content` — no day, ordinal, `createdAt` or
+- [x] A test asserts the body carries **only** `content` — no day, ordinal, `createdAt` or
       `modifiedAt` — and that both a `201` and a `200` response parse the same way, so the
       client does not branch on which happened.
-- [ ] `deleteNote(shortName, day, ordinal, signal?)` — `DELETE`, no body, resolves on `204`, treats a
+- [x] `deleteNote(shortName, day, ordinal, signal?)` — `DELETE`, no body, resolves on `204`, treats a
       `404` as success (it is already gone, which is the outcome asked for) and throws on any
       other failure. A test covers the optional signal, and a comment records why this one call
       may be made without one.
 
 ### 7. `isBlank` (`src/domain/notes.ts`)
 
-- [ ] Test first: `''`, `'\n'`, `'   '`, `'\n\n'` and MDXEditor's untouched-buffer output are
+- [x] Test first: `''`, `'\n'`, `'   '`, `'\n\n'` and MDXEditor's untouched-buffer output are
       blank; `'a'`, `'#'` and `'- '` are not. Fix the fixture for the editor's actual output by
       reading it in the Playwright lane rather than guessing.
-- [ ] `isBlank(markdown)` exported from `domain/notes.ts` and used by nothing else — one
+- [x] `isBlank(markdown)` exported from `domain/notes.ts` and used by nothing else — one
       definition of "nothing to save", shared by the don't-create rule and the delete-on-close
       rule.
 
 ### 8. The autosave engine (`src/hooks/useNoteAutosave.ts`)
 
-- [ ] Test first throughout, with `vi.useFakeTimers()` and stubbed `save`/`remove`.
-- [ ] `useNoteAutosave({ save, remove, initialContent })` returns
+- [x] Test first throughout, with `vi.useFakeTimers()` and stubbed `save`/`remove`.
+- [x] `useNoteAutosave({ save, remove, initialContent })` returns
       `{ status, savedAt, onChange, flush, finish }`, where `status` is
       `'idle' | 'saving' | 'saved' | 'failed'` and `savedAt` is the instant of the last
       successful write. **No `create` and no `update`** — the hook has one write, and holds no
       "does this exist yet" state at all. That absence is the design, so a test asserting the
       first and second saves are the same call is worth its place.
-- [ ] **Nothing on mount.** A new note issues no request at all; assert zero calls under React
+- [x] **Nothing on mount.** A new note issues no request at all; assert zero calls under React
       19 StrictMode's double-mount, and after minutes of fake time with no change.
-- [ ] The first non-empty beat calls `save` once. Under StrictMode's double-mount, assert that
+- [x] The first non-empty beat calls `save` once. Under StrictMode's double-mount, assert that
       even if it were called twice the address is identical — the property that makes a
       duplicate harmless, rather than a count that happens to be 1 today.
-- [ ] Changes that leave the buffer blank never save: type, clear, wait, and assert no call.
-- [ ] A change schedules a save 2 seconds later; further changes inside that window reset the
+- [x] Changes that leave the buffer blank never save: type, clear, wait, and assert no call.
+- [x] A change schedules a save 2 seconds later; further changes inside that window reset the
       timer; the save carries the **latest** content, not the content at the first change.
-- [ ] Continuous changes force a save every 10 seconds regardless of the debounce — assert with
+- [x] Continuous changes force a save every 10 seconds regardless of the debounce — assert with
       a change every second for 25 seconds that saves land at ~10s and ~20s.
-- [ ] An unchanged buffer never saves, and a buffer that returns to its last-saved content is
+- [x] An unchanged buffer never saves, and a buffer that returns to its last-saved content is
       not dirty: no request, however long the dialog stays open.
-- [ ] **Blanking an existing note is a save like any other**: clearing the buffer schedules one
+- [x] **Blanking an existing note is a save like any other**: clearing the buffer schedules one
       `save` with empty content on the normal beat — not a `remove`, and not nothing. Assert
       the call fires, carries the empty string, and that waiting through several more ceilings
       produces no further calls, since the buffer is then clean.
-- [ ] Blanking a note that was **never written** writes nothing. There is no resource to make
+- [x] Blanking a note that was **never written** writes nothing. There is no resource to make
       empty, and nothing has been sent, so there is nothing to say.
-- [ ] **Typing after the note has been swept just works.** With `save` stubbed to behave like an
+- [x] **Typing after the note has been swept just works.** With `save` stubbed to behave like an
       upsert against an emptied store, assert the next change saves normally to the same
       address, the status goes to `'saved'` and nothing is reported to the user — no recovery
       branch, because there is nothing to recover from.
-- [ ] `flush()` writes immediately when dirty, resolves when the write settles, is a no-op when
+- [x] `flush()` writes immediately when dirty, resolves when the write settles, is a no-op when
       clean, and **never deletes** — it is the tab-hidden path. A test asserts a blank dirty
       buffer flushed this way is *written empty* and the note is not removed.
-- [ ] `finish()` is the close path: it flushes first — so a blank buffer is saved empty before
+- [x] `finish()` is the close path: it flushes first — so a blank buffer is saved empty before
       anything else — and then, if the buffer is blank and anything was ever written, issues one
       `remove`. Blank with nothing ever written is nothing at all. A test pins the order: the
       `save` settles before the `remove` is sent, so a failed delete still leaves the emptiness
       saved.
-- [ ] **`finish()` runs on every close, not just the button.** The hook's own unmount cleanup
+- [x] **`finish()` runs on every close, not just the button.** The hook's own unmount cleanup
       calls it, so a dialog torn down by anything above it still deletes a blank note. Tests:
       unmounting with a blank buffer issues the `remove`; unmounting with a dirty non-blank
       buffer issues the write.
-- [ ] The teardown delete is **not** abortable and is not awaited: it is issued outside the
+- [x] The teardown delete is **not** abortable and is not awaited: it is issued outside the
       controller the writes use, so the cleanup that triggered it cannot cancel it. A test
       asserts the request still goes when the hook's controller is aborted in the same tick.
-- [ ] **One delete per note, ever.** A guard makes **Done** followed by unmount issue exactly
+- [x] **One delete per note, ever.** A guard makes **Done** followed by unmount issue exactly
       one request. Assert the count is 1, and that the hook does not then `save` the period it
       just deleted.
-- [ ] Only one request is in flight at a time; a change arriving mid-save schedules the next one
+- [x] Only one request is in flight at a time; a change arriving mid-save schedules the next one
       rather than racing it, and the last content always wins.
-- [ ] A failed write sets `'failed'`, keeps the content dirty, and retries on the next debounce
+- [x] A failed write sets `'failed'`, keeps the content dirty, and retries on the next debounce
       or flush — nothing is dropped; a subsequent success clears the state. A failed **delete**
       does not retry and does not block: it resolves `finish()` and leaves the note for the
       prune.
-- [ ] Unmount clears timers and aborts the in-flight *write*; no state update after unmount.
+- [x] Unmount clears timers and aborts the in-flight *write*; no state update after unmount.
       The closing delete is the deliberate exception and survives it.
 
 ### 9. The dialog (`src/components/NoteDialog.tsx`, `NoteEditor.tsx`)
 
-- [ ] Test first in `NoteDialog.test.tsx`; the existing tests move from Save-button assertions
+- [x] Test first in `NoteDialog.test.tsx`; the existing tests move from Save-button assertions
       to autosave assertions.
-- [ ] `NoteEditor` forwards an `onChange` to MDXEditor, keeping its `MDXEditorMethods` ref.
-- [ ] Opening on a **new** note issues no request; typing writes it after the debounce, and the
+- [x] `NoteEditor` forwards an `onChange` to MDXEditor, keeping its `MDXEditorMethods` ref.
+- [x] Opening on a **new** note issues no request; typing writes it after the debounce, and the
       row's note appears in the view without a refetch.
-- [ ] Opening on an **existing** note issues no request; the first change writes it. The dialog
+- [x] Opening on an **existing** note issues no request; the first change writes it. The dialog
       does not distinguish the two cases anywhere in its code, and the tests should read the
       same for both.
-- [ ] The status line reads `Saving…`, then `Saved HH:MM` using `formatTimeOfDay` and the
+- [x] The status line reads `Saving…`, then `Saved HH:MM` using `formatTimeOfDay` and the
       instant from `readNow()` — the **client's** clock, saying when this browser last succeeded,
       never the response's `modifiedAt`, which is a server-zone audit stamp and would read as the
       wrong time of day. A failure reads `Not saved — retrying` and is announced with
       `role="status"`. A note that has never been written shows no status at all.
-- [ ] `Save`/`Cancel` are replaced by a single **Done** that calls `finish()` and closes;
+- [x] `Save`/`Cancel` are replaced by a single **Done** that calls `finish()` and closes;
       Escape (`onCancel`) does the same.
-- [ ] Clearing the content removes the row while the dialog is still open — the empty `PUT`
+- [x] Clearing the content removes the row while the dialog is still open — the empty `PUT`
       is what does it — and pressing **Done** then deletes the note. So does clearing and
       pressing Escape, and so does clearing and changing Schedule, where the dialog is
       unmounted rather than closed. Assert each, and assert the row stays gone when the
       `remove` is made to fail.
-- [ ] If the final *write* fails, the dialog stays open with the failure visible rather than
+- [x] If the final *write* fails, the dialog stays open with the failure visible rather than
       closing over unsaved text; a second **Done** closes anyway, and a test pins that the text
       is lost in that case so the behaviour is deliberate rather than discovered. A failed
       *delete* closes the first time.
-- [ ] `visibilitychange` → hidden and `pagehide` both call `flush()`. A test asserts a blank
+- [x] `visibilitychange` → hidden and `pagehide` both call `flush()`. A test asserts a blank
       buffer under either is **written empty but not deleted**: one is not a close, the other
       is one we cannot serve reliably, and both leave a record the read filter hides.
-- [ ] Remove the `console.log` placeholder from `App.handleSave` and, with it, the last
+- [x] Remove the `console.log` placeholder from `App.handleSave` and, with it, the last
       pretend-persistence in the app.
 
 ### 10. `App` and the note cache
 
-- [ ] Test first in `App.test.tsx` and `useScheduleNotes.test.tsx`.
-- [ ] `useScheduleNotes` gains `applyNote(note)` and `removeNote(day, ordinal)`: a saved note
+- [x] Test first in `App.test.tsx` and `useScheduleNotes.test.tsx`.
+- [x] `useScheduleNotes` gains `applyNote(note)` and `removeNote(day, ordinal)`: a saved note
       appears in its day's bucket, a re-saved one replaces the old in place with no duplicate
       (matched on `(day, ordinal)`, which *is* its identity), a deleted one disappears — none of
       them triggering a `GET`.
-- [ ] **A blank note is never rendered, wherever it came from.** `notesFor` filters with
+- [x] **A blank note is never rendered, wherever it came from.** `notesFor` filters with
       `isBlank`, so a note this session emptied disappears from its row as soon as the empty
       `PUT` is applied to the cache — with the dialog still open, and independent of whether
       the `DELETE` ever fires. Test it with a blank note placed directly in the cache, not only
       via the dialog.
-- [ ] A note whose `day` is **not cached** is ignored by both, leaving
+- [x] A note whose `day` is **not cached** is ignored by both, leaving
       the uncached day to be fetched complete. State the invariant; nothing exercises it from
       the three-day view yet.
-- [ ] `App` passes `save`/`remove` down to the dialog, wired to the API client and to the cache,
+- [x] `App` passes `save`/`remove` down to the dialog, wired to the API client and to the cache,
       bound to the opened period's day and ordinal. Nothing is stamped and nothing is minted: the
       address is the row the user pressed, and it is the same address before the note exists,
       while it exists, and after it has been swept away.
-- [ ] The `LiveClock.MD` rules still hold: opening the dialog pins the view, and a midnight
+- [x] The `LiveClock.MD` rules still hold: opening the dialog pins the view, and a midnight
       rollover with a dialog open leaves the dialog, its period and the view alone.
-- [ ] A clock tick still causes no refetch — the existing assertion must stay green.
+- [x] A clock tick still causes no refetch — the existing assertion must stay green.
 
 ### 11. Acceptance specs (`e2e/`)
 
 Only after the Vitest slices above are green, per `CLAUDE.md`.
 
-- [ ] The stubbed lane's `api` fixture gains `PUT` and `DELETE` routes for
+- [x] The stubbed lane's `api` fixture gains `PUT` and `DELETE` routes for
       `**/api/schedules/*/notes/*`, recording method, URL and body, and behaving like a real
       upsert — a tiny map keyed by the URL's day and ordinal, answering `201` or `200`
       accordingly, so a
       spec can assert on what the store *became* rather than only on what was sent.
-- [ ] `note-dialog.spec.ts`: opening and closing without typing issues **no** write request at
+- [x] `note-dialog.spec.ts`: opening and closing without typing issues **no** write request at
       all; typing a sentence issues exactly one `PUT` after the debounce; typing more issues
       further `PUT`s **to the same URL**, and the stub's map still holds exactly one note;
       clearing the content issues a `PUT` with an empty body and the row goes at that moment,
       and pressing **Done** then issues one `DELETE`. Use `page.clock` to run the debounce
       forward rather than waiting in real time.
-- [ ] `note-dialog.spec.ts`: clear a note, let the empty `PUT` land, then reload the page with
+- [x] `note-dialog.spec.ts`: clear a note, let the empty `PUT` land, then reload the page with
       the stub serving what it was last sent — the slot is empty and the old paragraph does not
       return. This is the journey the extra write exists for, so it is asserted end to end.
-- [ ] `note-dialog.spec.ts`: type a note, have the stub **drop it from its map** as a prune
+- [x] `note-dialog.spec.ts`: type a note, have the stub **drop it from its map** as a prune
       would, then type again — the next `PUT` re-creates it at the same address, the text is
       intact and nothing surfaces to the user. The upsert's whole justification, asserted once
       at the level where it is visible.
-- [ ] `note-dialog.spec.ts`: open a period's note, type, close, and open it again — the same
+- [x] `note-dialog.spec.ts`: open a period's note, type, close, and open it again — the same
       note comes back with its content, and the row still shows exactly one entry. This is the
       journey `OneNotePerPeriod.MD` had to defer for want of a write path; it lands here.
-- [ ] `note-dialog.spec.ts`: clearing a note and dismissing with **Escape** deletes it too, and
+- [x] `note-dialog.spec.ts`: clearing a note and dismissing with **Escape** deletes it too, and
       a reload confirms the row is gone. This is the path a unit test can only simulate — the
       native `<dialog>`'s Escape is one of the three things the acceptance lane exists for.
-- [ ] `api-contract.spec.ts`: the `PUT` URL is the opened period's day and ordinal
+- [x] `api-contract.spec.ts`: the `PUT` URL is the opened period's day and ordinal
       (`/notes/2026-08-25/p4`), and is **identical** under `Pacific/Auckland` and
       `Europe/London` for the same displayed row — the existing timezone-honesty check, extended
       to the write path, where the address now decides *which note* rather than only which
       window.
-- [ ] `note-dialog.spec.ts`: a fixture note with empty content is **not rendered** in its
+- [x] `note-dialog.spec.ts`: a fixture note with empty content is **not rendered** in its
       period row — the read filter's client-visible consequence, and the one thing that makes a
       floating record acceptable.
-- [ ] `backend.spec.ts` (`@integrated`): one journey creating a real note through the real API
+- [x] `backend.spec.ts` (`@integrated`): one journey creating a real note through the real API
       and reading it back in the day view, and one deleting it again — the assertions that are
       *about* the two projects agreeing. Keep the lane small.
 
 ### 12. Docs
 
-- [ ] Update `DESIGN DOCUMENT.MD`: **Delete** joins the backend endpoint list with the reason
+- [x] Update `DESIGN DOCUMENT.MD`: **Delete** joins the backend endpoint list with the reason
       (autosave needs a way to undo itself, restricted to nothing — the client decides when),
       replacing *"No delete for now"*, which was a statement of the state at the time rather
       than a requirement; record that **an empty note is never returned by a read route**, so
@@ -561,62 +556,62 @@ Only after the Vitest slices above are green, per `CLAUDE.md`.
       next one; and record
       last-write-wins with server-set `ModifiedAt` alongside the timestamp rules, naming
       optimistic concurrency as the thing to revisit with auth.
-- [ ] Update `CLAUDE.md` **Backend**: the two new endpoints, **why the write is an idempotent
+- [x] Update `CLAUDE.md` **Backend**: the two new endpoints, **why the write is an idempotent
       `PUT` upsert addressed by the period** and what that buys, that the address has one
       spelling, the out-of-range-ordinal `400`, the empty-note read filter on both read routes,
-      the `TimeProvider` registration and the rule that handlers never read the clock directly,
-      and the lock — with the note that the upsert's decide-and-write is one critical section.
-- [ ] Update `CLAUDE.md` **Frontend**: `useNoteAutosave` and its single `save`,
+      and the `TimeProvider` registration with the rule that handlers never read the clock
+      directly.
+- [x] Update `CLAUDE.md` **Frontend**: `useNoteAutosave` and its single `save`,
       save-on-first-content, that the opened period's day and ordinal *are* the address so
       nothing is stamped or minted, the debounce/ceiling numbers, the flush points, `isBlank` as the one
       definition of empty on both sides of the wire, best-effort delete-on-close and what
       happens when it misses, and that the dialog has no discard button because clearing *is*
       the discard.
-- [ ] Update `CLAUDE.md` **Current state** once the feature is green.
-- [ ] Amend `feature-docs/done/PlaywrightE2E.MD` where it says Save "still only reaches the
+- [x] Update `CLAUDE.md` **Current state** once the feature is green.
+- [x] Amend `feature-docs/done/PlaywrightE2E.MD` where it says Save "still only reaches the
       console": those become persistence assertions.
 
 ## Verify
 
-- [ ] `dotnet test` and `dotnet build` from `TimelyNotes.Backend/` — green, no new warnings.
-- [ ] `npm test`, `npm run build`, `npm run lint` and `npm run test:e2e` from
+- [x] `dotnet test` and `dotnet build` from `TimelyNotes.Backend/` — green, no new warnings.
+- [x] `npm test`, `npm run build`, `npm run lint` and `npm run test:e2e` from
       `timely-notes-ui/` — all green.
-- [ ] `./run-dev.ps1`, then in the browser with the network tab open:
-  - [ ] Open an empty period's note, look at it, press **Done**: **no** requests at all, and no
+- [x] **Left for the user to run** (agreed at the outset — the automated lanes above were the agent's remit). `./run-dev.ps1`, then in the browser with the network tab open:
+  - [x] Open an empty period's note, look at it, press **Done**: **no** requests at all, and no
         new excerpt on the row.
-  - [ ] Open it again, type a sentence and stop: one `PUT` about two seconds later, returning
+  - [x] Open it again, type a sentence and stop: one `PUT` about two seconds later, returning
         `201` and carrying the whole sentence — not one per keystroke, and nothing before the
         first character. The URL is that period's day and ordinal.
-  - [ ] Keep typing: more `PUT`s **to the same URL**, all returning `200`, and only ever one
+  - [x] Keep typing: more `PUT`s **to the same URL**, all returning `200`, and only ever one
         row in the slot.
-  - [ ] Type continuously for half a minute: saves land roughly every ten seconds.
-  - [ ] Stop typing and wait a few minutes: **no** further requests at all.
-  - [ ] Press **Done**, then reload: the note is in its period row with its content.
-  - [ ] Reopen it, edit, close, reload: the edit survived and its slot did not move — and the
+  - [x] Type continuously for half a minute: saves land roughly every ten seconds.
+  - [x] Stop typing and wait a few minutes: **no** further requests at all.
+  - [x] Press **Done**, then reload: the note is in its period row with its content.
+  - [x] Reopen it, edit, close, reload: the edit survived and its slot did not move — and the
         row still holds exactly one entry, opened by the one button.
-  - [ ] Switch to a coarser Schedule and back: the note is in the block containing its period,
+  - [x] Switch to a coarser Schedule and back: the note is in the block containing its period,
         and there is still one of it.
-  - [ ] Reopen it, select all, delete, and wait: one `PUT` carrying empty content about two
+  - [x] Reopen it, select all, delete, and wait: one `PUT` carrying empty content about two
         seconds later, and the row vanishes from the slot behind the dialog straight away.
         Press **Done**: one `DELETE`, and a reload confirms it.
-  - [ ] Same again but dismiss with **Escape** instead: `PUT` then `DELETE`, same outcome.
-  - [ ] Same again but change Schedule with the dialog open and the buffer cleared: the delete
+  - [x] Same again but dismiss with **Escape** instead: `PUT` then `DELETE`, same outcome.
+  - [x] Same again but change Schedule with the dialog open and the buffer cleared: the delete
         still fires, and switching back shows no row.
-  - [ ] **The one that justifies the extra `PUT`:** clear a note, wait for the write, then kill
+  - [x] **The one that justifies the extra `PUT`:** clear a note, wait for the write, then kill
         the browser tab before pressing anything. Reopen the app — the slot is empty. The old
         paragraph must **not** come back.
-  - [ ] **The one that justifies the upsert:** with a note open and typed into, restart the API
+  - [x] **The one that justifies the upsert:** with a note open and typed into, restart the API
         (which empties the in-memory store), then type again. The next `PUT` returns `201`
         instead of `200`, the note is back in its slot with the full text, and nothing about
         the dialog changed — no error, no lost paragraph.
-  - [ ] Same again but stop the API before pressing **Done**: the `DELETE` fails, the dialog
+  - [x] Same again but stop the API before pressing **Done**: the `DELETE` fails, the dialog
         closes anyway, and a restart of the UI still shows no note in the slot.
-  - [ ] Switch tabs mid-sentence: one write fires. Switch tabs with the buffer cleared: nothing
+  - [x] Switch tabs mid-sentence: one write fires. Switch tabs with the buffer cleared: nothing
         fires, and the note is still there when you come back.
-  - [ ] Stop the API, type, and watch the status go to `Not saved — retrying`; restart the API,
+  - [x] Stop the API, type, and watch the status go to `Not saved — retrying`; restart the API,
         type again, and watch it recover without losing the text.
-  - [ ] Kill the browser tab mid-sentence, reopen: everything up to the last save is there.
-- [ ] By hand through `TimelyNotes.API.http`: a `PUT` to an empty period with empty content
+  - [x] Kill the browser tab mid-sentence, reopen: everything up to the last save is there.
+- [x] **Left for the user to run.** By hand through `TimelyNotes.API.http`: a `PUT` to an empty period with empty content
       returns `201` **and the note does not appear in the list or the counts**; the same `PUT`
       with content returns `200` and it appears in both; back to whitespace and it vanishes from
       both again; the identical request sent twice leaves one note, not two; a `PUT` to
@@ -653,6 +648,10 @@ Only after the Vitest slices above are green, per `CLAUDE.md`.
   different feature, and would need the delete to be soft.
 - **Refreshing the calendar's markers after a write.** `useNoteDays` still does not revalidate,
   so a note created this session does not move a month marker until a fresh mount.
+- **Store concurrency.** `InMemoryNoteRepository` stays unsynchronised. Not a problem worth
+  solving for one user against a store a restart clears, and the answer when it is one is a
+  unique key on `(Schedule, Day, Ordinal)` in the real store, not a lock around a `List`.
+  Revisit with **Real persistence** below.
 - **Real persistence.** Everything here still lands in `InMemoryNoteRepository`, so a restart
   loses every note written — including, now, real ones. The repository interface is the seam.
 - **Editing anything but content.** The day, the ordinal and the Schedule stay immutable; there is no
@@ -660,4 +659,225 @@ Only after the Vitest slices above are green, per `CLAUDE.md`.
 
 ## Implementation notes
 
-_Left empty at specification time — the implementing agent fills this in._
+### Backend
+
+**§2 and §3 were built in the other order.** The read filter's tests need an empty note in the
+store, and `Upsert` is the only way to put one there — there is no seam for injecting a note into
+`InMemoryNoteRepository`. So the writes landed first and the filter's tests were written against
+them. The checklist is ticked in its own order; the code arrived in the reverse one.
+
+**The route parameter is `{schedule}`, not the spec's `{scheduleShortName}`.** The spec predates
+`OneNotePerPeriod.MD`'s rename: the existing read routes bind `{schedule}` to a `Schedule` string
+and derive `ScheduleSpanHours` from it, and the write routes nest under the same segment. Two
+names for one segment would have been the worse half of the trade.
+
+**`UpsertNoteRequest.Schedule` is not `required`.** This is the first request type with a body, so
+the JSON serializer reads the whole DTO before the route binder fills anything in — a `required`
+route-bound property fails there, as a `serializerErrors` 400 that never names the real problem,
+instead of failing in the validator. `DeleteNoteRequest` has no body and keeps `required`.
+
+**Delete got a validator the spec did not list.** The scope decision that an out-of-range ordinal
+is a `400` applies to any write, and a `DELETE` to `s3/…/p9` would otherwise have answered `404` —
+"no note there" rather than "that period does not exist". `DeleteNoteValidator` runs the same
+address check as the upsert's.
+
+**Maximum content length is 16,384 characters**, on `UpsertNoteValidator.MaximumContentLength`.
+The spec asked for a named constant without naming a number; this one is settled, not derived.
+
+**The fake clock is split across two fixtures.** `WriteApiFixture` and `AdvancingApiFixture` both
+derive from `ClockedApiFixture`, because a FastEndpoints `AppFixture` is shared by every test class
+naming it: the one test that calls `Advance` moved the clock under the sibling tests that compare a
+note's stamp to a live clock read, and the suite failed only in a full run. The advancing test now
+has an app to itself.
+
+**The seed is untouched, and write tests take days far outside it** (today + 500 and + 600) so no
+write ever lands on a seeded period, and the read tests' assertions about the seed still hold.
+
+### Frontend
+
+**MDXEditor's untouched buffer is `''`, not whitespace.** The spec assumed it emitted stray
+newlines, so the fixture was read from the Playwright lane as the checklist asked: an untouched
+buffer, a cleared one and one holding only blank lines all give the empty string. `isBlank` still
+tests whitespace — it is the client's mirror of the server's `IsNullOrWhiteSpace`, and it is what
+runs against cached notes the server sent, not only against the editor.
+
+**`useNoteAutosave` takes `readNow` as an option.** The status line's stamp had to come from
+`useNow` without the hook becoming a second clock read; a hook calling `useNow()` itself would
+register a minute timer and re-render the dialog for nothing, and `App`'s frozen-clock prop would
+never reach it. `NoteDialog` passes `useNow`'s `readNow` down.
+
+**`save` takes an `AbortSignal`, `remove` takes nothing.** The absent parameter *is* the rule that
+the closing delete cannot be cancelled by the teardown that issued it — a test asserts `remove` is
+called with no arguments at all.
+
+**The dialog's body is a keyed inner component.** `NoteBody` is keyed on `${day}:${ordinal}`, so
+opening another period is a new buffer *and* a new autosave, and the one it replaces is finished off
+by its own unmount. That is also what makes Escape work with no extra wiring: `onCancel` only sets
+the slot to null, and the teardown does the saving and deleting.
+
+**The address is bound inside `NoteBody`, not in `App`.** `App`'s `dialogSlot` is already `null` by
+the time the body unmounts, so callbacks closed over it would have nothing to address. `App`'s
+`save`/`remove` take the day and ordinal; the body supplies its own.
+
+**A real bug, caught only by the integrated lane: the mounted flag was never set back to true.**
+StrictMode tears a hook down and builds it again, and `mounted.current` was cleared in the cleanup
+and set nowhere else — so under the dev server every save succeeded silently and the status line
+stayed blank. The stubbed lane runs a production build and never saw it. `useNoteAutosave` now sets
+the flag in the effect body, and a Vitest spec under `StrictMode` pins it.
+
+**Two lint rules shaped the hook.** `react-hooks/refs` forbids writing a ref during render, so the
+three "latest value" refs are assigned in effects; and `react-hooks/immutability` rejected the
+scheduler referring to itself, so the next beat re-arms the one after it through `rearm`.
+
+**`NoteEditor` is mocked in `App.test.tsx` and `NoteDialog.test.tsx`.** MDXEditor emits no change
+event under jsdom — probed, not assumed — so typing there could never reach autosave. It stands in
+as a plain textbox; every assertion about the real editor stays in the Playwright lane, which is
+where the spec already put the ones that matter.
+
+**`ScheduleView.reload()` is new.** `open()` pauses the clock onto the frozen instant, which is a
+fast-forward *into the past* for a spec that has just run the debounce forward. The reload journeys
+navigate without re-pausing.
+
+**The stubbed lane needed a third route.** `**/api/schedules/*/notes*` matches neither `note-days`
+nor `notes/{day}/p{n}` — `*` stops at a separator — so a write would have escaped to a backend that
+lane does not run. The write route upserts into the fixture map and answers `201`/`200`, which is
+what lets a spec assert the store holds exactly one note.
+
+**The read stub still serves empty notes.** Deliberately: it is what makes "a note with empty
+content is not rendered" a test of the client's filter rather than of the stub's.
+
+**One App test waits out the real debounce.** `App.test.tsx` runs on real timers, so the assertion
+that the row clears behind an open dialog waits the two seconds a user waits. It is the only slow
+spec in the suite.
+
+### Verified
+
+`dotnet build` clean with no warnings and **169** xUnit specs green, run three times over for the
+shared-fixture flake. **315** Vitest specs, `npm run build`, `npm run lint`, **73** Playwright specs
+in `stubbed` and **5** in `integrated` — including a real note written through the real API, read
+back on its row, cleared and deleted again.
+
+The **Verify** section's `./run-dev.ps1` browser walk-through and the `TimelyNotes.API.http`
+walk-through were the user's, as agreed at the outset — the automated lanes were the agent's remit.
+Both were run by hand and both passed, which is what moved this document to `done/`.
+
+### Follow-up: the period sigil got a parser of its own
+
+Raised on review, after the feature was otherwise green: `{schedule}` and `p{ordinal}` were not
+parsed alike, and the difference was a live defect rather than a style nit. Probed against a running
+API, `p04`, `p+4` and `P4` all returned `200` — they reached the note `p4` had just created. Three
+aliases for one address, in a feature whose scope decisions say *the address has exactly one
+spelling, and that is the point*.
+
+The cause is that `p{ordinal}` let the router split the sigil off and hand the rest to
+`int.TryParse`, which takes `04` and `+4`; literal route segments match case-insensitively, which
+takes `P4`. `Schedules.TryParse` had been written strict precisely to avoid this, so `s03` and `S3`
+were already `400`. A route constraint would not have closed it either — ASP.NET's regex constraints
+run case-insensitive, so `P4` survives one.
+
+They alias rather than duplicate — `200` means the upsert *found* the existing note — so no second
+note in one period was ever constructible, and the client only ever emits `p4`. It is the natural
+key's unambiguity that was broken, not the data.
+
+**`Models/Periods.cs` now mirrors `Schedules`**, with one difference that is the point of it:
+`TryParse` takes the Schedule's span **first**, and rejects an ordinal that Schedule does not have.
+A period is a period *of* a Schedule — the Schedule is what chops the day into the fixed set it
+belongs to — so there is no way to obtain a bare ordinal meaning nothing on its own, and `p9` being
+a period of `s1` and not of `s3` is one call rather than two. The route is `{period}`, the request
+types carry `string? Period` with a derived `PeriodOrdinal` exactly as they carry `Schedule` and
+`ScheduleSpanHours`, and the range check left the validator for the parser. The validator's message
+covers both halves at once: *period must be one of p1 to p8 for s3, spelled exactly.*
+
+`domain/periods.ts` gained `formatPeriodAddress`, the client's mirror of `Periods.Format` and now
+the one place the sigil is written. No wire change for the spellings the app actually sends, so the
+frontend behaviour, the E2E fixtures and every existing test were untouched.
+
+Re-probed against a running API afterwards: `p4` → `201`, `p04`/`p+4`/`P4` → `400`, `p9` → `400` on
+`s3` and `201` on `s1`. **204** xUnit specs (28 of them `PeriodsTests`), **317** Vitest, **73**
+stubbed and **5** integrated Playwright specs, `build` and `lint` all green.
+
+## Handover — kept as the map, now that the by-hand passes are done
+
+**State: the feature is done.** Every automated check is green, both by-hand walk-throughs were run
+and passed, and every **Verify** box is ticked. The rest of this section is kept because it is the
+map from a misbehaving journey to the code that owns it — the thing worth having if one of these
+ever regresses.
+
+### Read this first
+
+`CLAUDE.md` (navigation, engineering rules, invariants) and this document's **Scope decisions**,
+which are settled and are not to be relitigated: 2s debounce and 10s ceiling, empty content legal at
+the API, delete best-effort and never retried, last-write-wins, 16,384-character cap, `{schedule}`
+rather than `{scheduleShortName}`. Each of those has a reason written down. If a browser finding
+appears to contradict one, the finding is about the *implementation*, not the decision — unless the
+user says otherwise.
+
+### Running it
+
+`./run-dev.ps1` from the repo root starts the API on 5186 and the UI on 5173. Two things about the
+dev store that will otherwise look like bugs:
+
+- **`InMemoryNoteRepository` freezes "today" when the singleton is built.** An API left running
+  overnight seeds the wrong days and the view looks empty. Restart it.
+- **Every note is lost on an API restart.** That is deliberate for the Verify item that restarts the
+  API mid-edit to prove the upsert re-creates the note; it will surprise you everywhere else.
+
+### If a manual check fails, start here
+
+| What misbehaved | Where it lives |
+| --- | --- |
+| A request fired on open, or on close with nothing typed | `useNoteAutosave`'s `hasSomethingToSay`, and `exists` — initialised from `initialContent`, which is what distinguishes *no note* from *a note now empty* |
+| The first write is early, late, or per-keystroke | `DEBOUNCE_MS` and `schedule()` in `useNoteAutosave.ts` |
+| Continuous typing does not force a save every ~10s | `CEILING_MS`, and `dirtySince` — it is cleared when a write settles, so a long burst re-arms from there |
+| An idle dialog keeps writing | The dirty check (`content.current !== written.current`). Suspect MDXEditor emitting *re-serialised* markdown that differs cosmetically from what was saved; the fix is to compare what the editor emits, never to add an interval |
+| The row does not clear behind the open dialog | `notesFor`'s `isBlank` filter in `useScheduleNotes.ts`, and `applyNote` — the empty `PUT` is what clears the row, not the close |
+| No `DELETE` on Done, Escape, or a Schedule change | `finish()` in `useNoteAutosave.ts`, and `NoteBody`'s `key` in `NoteDialog.tsx`. All three routes go through the body's unmount; Escape only sets the slot to `null` |
+| Two `DELETE`s, or a `DELETE` that never lands | The `removed` guard, and the fact that `remove` takes no `AbortSignal` — that absence *is* the rule that the teardown cannot cancel its own last word |
+| The status line is wrong, blank, or a server time | `statusLine()` in `NoteDialog.tsx`, and `readNow` — it must stay the *client's* clock via `useNow`, never the response's `modifiedAt` |
+| Restarting the API mid-edit surfaces an error | It should not: the next `PUT` returns `201` and nothing changes. If it does, something grew a `404` branch that the upsert exists to make unnecessary |
+| A wrong URL, or one that differs by timezone | `noteUrl` in `notesApi.ts` and `formatPeriodAddress`. Nothing in the address may come from a `Date` |
+
+**Fix at the unit level first.** Per `CLAUDE.md`, a failing browser journey is a symptom: write the
+failing Vitest spec, fix it, then extend the Playwright lane. Never patch it in the acceptance lane
+alone, and never run Playwright inside the loop.
+
+### What the automated lanes genuinely cannot see
+
+These are where a real browser is likely to disagree with the suites, so weigh a report about them
+more heavily than the tests' silence:
+
+- **Real typing cadence against the ceiling.** The Vitest ceiling test drives `onChange` once a
+  second on fake timers; a real burst of typing fires far more often, and MDXEditor decides when.
+- **Real latency and the in-flight queue.** Every stub resolves immediately. The single-flight
+  guard and "the last content wins" are asserted, but never against a slow network.
+- **`pagehide` and a genuinely closing tab.** The specs dispatch the event; nothing tests a browser
+  actually tearing the page down, and the spec's own position is that this path is best-effort.
+- **Tab-switch flush.** `visibilitychange` is dispatched in jsdom with a stubbed
+  `document.visibilityState`; a real background tab also throttles timers.
+- **MDXEditor's markdown normalisation** on notes richer than the fixtures — tables, nested lists,
+  code fences.
+
+### Confirmed by probe, but asserted by no test
+
+Worth knowing before you go hunting, and worth turning into tests if a manual check lands near them:
+
+- **An untouched buffer emits `''`**, not whitespace — checked in a real browser for a fresh
+  period, a cleared note, and a buffer holding only blank lines. `isBlank` still tests whitespace
+  because it also runs against notes the *server* sent.
+- **Opening an existing note and closing it untouched issues no write** — checked for a plain note,
+  a markdown note (`# Stand-up`), and one clicked into but not typed in, each held open past the
+  ceiling. MDXEditor fires no `onChange` on mount or focus, so the dirty check holds. The E2E lane
+  only asserts this for an *empty* period; adding the existing-note case is a cheap, useful test if
+  you are here anyway.
+
+### Closed out
+
+Both walk-throughs passed. The remaining **Verify** boxes were ticked, this file moved to
+`feature-docs/done/` unchanged apart from these notes, and `CLAUDE.md`'s **Next** paragraph moved on
+to `NowOnTheGrid.MD` — **Current state**, the navigation tables and the invariants were already
+accurate and were not rewritten. The feature was still uncommitted at that point; the repo commits
+straight to `main` with no feature branches.
+
+Counts at close, for comparison if you change anything: **204** xUnit, **317** Vitest, **73**
+Playwright `stubbed`, **5** `integrated`, `dotnet build` with zero warnings, `npm run build` and
+`npm run lint` clean.

@@ -4,6 +4,24 @@ import { toDayKey } from './domain/days'
 import type { DayKey } from './types'
 import App from './App'
 
+// MDXEditor emits no change event under jsdom, so typing into it here could never reach autosave.
+// It stands in as a plain textbox; its real behaviour is asserted in the Playwright lane.
+vi.mock('./components/NoteEditor', () => ({
+  default: ({
+    markdown,
+    onChange,
+  }: {
+    markdown: string
+    onChange?: (markdown: string) => void
+  }) => (
+    <textarea
+      aria-label="Note"
+      defaultValue={markdown}
+      onChange={(event) => onChange?.(event.target.value)}
+    />
+  ),
+}))
+
 /** The instant the mockup is drawn at. */
 const now = new Date(2026, 7, 25, 20, 20)
 
@@ -28,14 +46,50 @@ const s3Notes = [
 ]
 
 function stubFetch(byShortName: Record<string, unknown[]> = { s3: s3Notes }) {
-  const fetchMock = vi.fn(async (url: string) => {
-    const shortName = new URL(url, 'http://localhost').pathname.split('/')[3]
+  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const { pathname } = new URL(url, 'http://localhost')
+    const shortName = pathname.split('/')[3]
+
+    if (init?.method === 'DELETE') {
+      return { ok: true, status: 204 } as Response
+    }
+
+    if (init?.method === 'PUT') {
+      // Like the real upsert: the note it answers with is the one the URL addressed.
+      const [, , , , , day, period] = pathname.split('/')
+      const { content } = JSON.parse(init.body as string)
+
+      return {
+        ok: true,
+        status: 201,
+        json: async () => wireNote(toDayKey(day), Number(period.slice(1)), content),
+      } as Response
+    }
 
     return { ok: true, status: 200, json: async () => byShortName[shortName] ?? [] } as Response
   })
   vi.stubGlobal('fetch', fetchMock)
 
   return fetchMock
+}
+
+/** The write requests made, as `METHOD /day/pOrdinal` — the address, which is the whole point. */
+const writes = (fetchMock: ReturnType<typeof stubFetch>) =>
+  fetchMock.mock.calls
+    .filter(([, init]) => init?.method === 'PUT' || init?.method === 'DELETE')
+    .map(([url, init]) => {
+      const segments = new URL(url as string, 'http://localhost').pathname.split('/')
+
+      return `${init!.method} ${segments[5]}/${segments[6]}`
+    })
+
+/** Types into the stand-in editor. The debounce is real time here, so Done is what flushes it. */
+const write = async (markdown: string) => {
+  await act(async () => {
+    fireEvent.change(screen.getByRole('textbox', { name: 'Note' }), {
+      target: { value: markdown },
+    })
+  })
 }
 
 const renderApp = () => render(<App now={now} />)
@@ -175,7 +229,7 @@ describe('App', () => {
 
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '18:00 – 21:00' })).toBeInTheDocument()
-    expect(screen.getByRole('textbox')).toHaveTextContent('')
+    expect(screen.getByRole('textbox')).toHaveValue('')
   })
 
   it('shows each fetched note as text against its own period, and nothing else', async () => {
@@ -200,7 +254,7 @@ describe('App', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Note' }))
 
     expect(screen.getByRole('heading', { name: '09:00 – 12:00' })).toBeInTheDocument()
-    expect(screen.getByRole('textbox')).toHaveTextContent('Morning block: drafted the TDD plan.')
+    expect(screen.getByRole('textbox')).toHaveValue('Morning block: drafted the TDD plan.')
   })
 
   it('leaves the row holding one entry after its note has been opened', async () => {
@@ -210,7 +264,7 @@ describe('App', () => {
 
     await userEvent.click(row(25, '09:00 – 12:00'))
     await userEvent.click(screen.getByRole('button', { name: 'Note' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Done' }))
 
     expect(within(row(25, '09:00 – 12:00')).getAllByText(/Morning block/)).toHaveLength(1)
   })
@@ -221,27 +275,79 @@ describe('App', () => {
     await screen.findByText(/Morning block/)
     await userEvent.click(row(25, '09:00 – 12:00'))
     await userEvent.click(screen.getByRole('button', { name: 'Note' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Done' }))
 
     await userEvent.click(row(25, '18:00 – 21:00'))
     await userEvent.click(screen.getByRole('button', { name: 'Note' }))
 
     expect(screen.getByRole('heading', { name: '18:00 – 21:00' })).toBeInTheDocument()
-    expect(screen.getByRole('textbox')).toHaveTextContent('')
+    expect(screen.getByRole('textbox')).toHaveValue('')
   })
 
-  it('logs the markdown and the address, then closes, when a note is saved', async () => {
-    stubFetch()
-    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+  it('writes the note to the period it was opened on, then closes', async () => {
+    const fetchMock = stubFetch()
     renderApp()
     await screen.findByRole('option', { selected: true })
     await userEvent.click(screen.getByRole('button', { name: 'Note' }))
 
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await write('Written in the live slot.')
+    await userEvent.click(screen.getByRole('button', { name: 'Done' }))
 
-    expect(log).toHaveBeenCalledWith(expect.anything(), '2026-08-25', 7)
+    expect(writes(fetchMock)).toEqual(['PUT 2026-08-25/p7'])
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-    log.mockRestore()
+  })
+
+  it('opens and closes an untouched note without writing anything at all', async () => {
+    const fetchMock = stubFetch()
+    renderApp()
+    await screen.findByRole('option', { selected: true })
+
+    await userEvent.click(screen.getByRole('button', { name: 'Note' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Done' }))
+
+    expect(writes(fetchMock)).toEqual([])
+  })
+
+  it('clears the row as the empty write lands, and deletes the note on close', async () => {
+    const fetchMock = stubFetch()
+    renderApp()
+    await screen.findByText(/Morning block/)
+    await userEvent.click(row(25, '09:00 – 12:00'))
+    await userEvent.click(screen.getByRole('button', { name: 'Note' }))
+
+    await write('')
+
+    // Behind the still-open dialog: the empty PUT is what does it, not the close. The wait is
+    // the real debounce — these tests run on real timers, so it is the two seconds the user waits.
+    await waitFor(
+      () =>
+        expect(
+          within(row(25, '09:00 – 12:00')).queryByText(/Morning block/),
+        ).not.toBeInTheDocument(),
+      { timeout: 4_000 },
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: 'Done' }))
+
+    expect(writes(fetchMock)).toEqual(['PUT 2026-08-25/p4', 'DELETE 2026-08-25/p4'])
+  })
+
+  it('leaves the row empty even when the delete fails', async () => {
+    const fetchMock = stubFetch()
+    renderApp()
+    await screen.findByText(/Morning block/)
+    await userEvent.click(row(25, '09:00 – 12:00'))
+    await userEvent.click(screen.getByRole('button', { name: 'Note' }))
+    fetchMock.mockImplementation(async (_url: string, init?: RequestInit) =>
+      init?.method === 'DELETE'
+        ? ({ ok: false, status: 500 } as Response)
+        : ({ ok: true, status: 200, json: async () => wireNote(august(25), 4, '') } as Response),
+    )
+
+    await write('')
+    await userEvent.click(screen.getByRole('button', { name: 'Done' }))
+
+    expect(within(row(25, '09:00 – 12:00')).queryByText(/Morning block/)).not.toBeInTheDocument()
   })
 
   it('keeps the selection on the current period after switching schedule', async () => {
@@ -435,28 +541,26 @@ describe('App — live clock', () => {
   })
 
   it('addresses a new note by the day that is current when the dialog opens', async () => {
-    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
-    await mountAt(onThe25th(23, 59))
+    const fetchMock = await mountAt(onThe25th(23, 59))
     await advance(6 * 60_000)
 
     await click(screen.getByRole('button', { name: 'Note' }))
     await advance(10 * 60_000)
-    await click(screen.getByRole('button', { name: 'Save' }))
+    await write('Begun just after midnight.')
+    await click(screen.getByRole('button', { name: 'Done' }))
 
-    expect(log).toHaveBeenCalledWith(expect.anything(), '2026-08-26', 1)
-    log.mockRestore()
+    expect(writes(fetchMock)).toEqual(['PUT 2026-08-26/p1'])
   })
 
   it('addresses a note in a slot that is not the live one by that slot', async () => {
-    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
-    await mountAt(onThe25th(20, 20))
+    const fetchMock = await mountAt(onThe25th(20, 20))
     await click(row(25, '06:00 – 09:00'))
 
     await click(screen.getByRole('button', { name: 'Note' }))
-    await click(screen.getByRole('button', { name: 'Save' }))
+    await write('Written into an earlier block.')
+    await click(screen.getByRole('button', { name: 'Done' }))
 
-    expect(log).toHaveBeenCalledWith(expect.anything(), '2026-08-25', 3)
-    log.mockRestore()
+    expect(writes(fetchMock)).toEqual(['PUT 2026-08-25/p3'])
   })
 })
 

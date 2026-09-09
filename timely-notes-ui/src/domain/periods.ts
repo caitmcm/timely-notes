@@ -70,3 +70,16 @@ export function formatPeriodLabel(period: Period, spanHours: SpanHours): string 
 export function formatDayHeading(day: DayKey): string {
   return `${day.slice(8)}/${day.slice(5, 7)}/${day.slice(0, 4)}`
 }
+
+/** e.g. `12:03`. The instant's own local fields, so it reads as the wall clock does. */
+export function formatTimeOfDay(at: Date): string {
+  return `${pad(at.getHours())}:${pad(at.getMinutes())}`
+}
+
+/**
+ * A period as it is spelled on the wire: `p4`. The client's mirror of the server's `Periods.Format`,
+ * and the one place the sigil is written — the server accepts this spelling and no other.
+ */
+export function formatPeriodAddress(ordinal: number): string {
+  return `p${ordinal}`
+}

@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor } from '@testing-library/react'
 import { eachDay, toDayKey } from '../domain/days'
 import { SCHEDULES } from '../domain/schedules'
-import type { DayKey, Schedule } from '../types'
+import type { DayKey, Note, Schedule } from '../types'
 import { useScheduleNotes } from './useScheduleNotes'
 
 const s3 = SCHEDULES[1]
@@ -268,5 +268,117 @@ describe('useScheduleNotes', () => {
     })
 
     expect(dayCell(24)).toHaveAttribute('data-loaded', 'true')
+  })
+})
+
+describe('useScheduleNotes cache edits', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  const note = (dayOfMonth: number, ordinal: number, content: string): Note => ({
+    day: day(dayOfMonth),
+    ordinal,
+    content,
+    createdAt: new Date(writtenAt),
+    modifiedAt: new Date(writtenAt),
+  })
+
+  /** Renders the day's notes as `ordinal:content`, so a replacement is distinguishable from a pair. */
+  function EditProbe({ schedule, from, to }: ProbeProps) {
+    const { notesFor, applyNote, removeNote } = useScheduleNotes(schedule, from, to)
+
+    return (
+      <div>
+        <ul>
+          {eachDay(from, to).map((value) => (
+            <li key={value} data-testid={`day-${value}`}>
+              {notesFor(value)
+                .map((entry) => `${entry.ordinal}:${entry.content}`)
+                .join(',')}
+            </li>
+          ))}
+        </ul>
+        <button type="button" onClick={() => applyNote(note(25, 4, 'replaced'))}>
+          replace
+        </button>
+        <button type="button" onClick={() => applyNote(note(25, 9, 'added'))}>
+          add
+        </button>
+        <button type="button" onClick={() => applyNote(note(25, 4, '   '))}>
+          blank
+        </button>
+        <button type="button" onClick={() => applyNote(note(9, 4, 'uncached'))}>
+          uncached
+        </button>
+        <button type="button" onClick={() => removeNote(day(25), 4)}>
+          remove
+        </button>
+        <button type="button" onClick={() => removeNote(day(9), 4)}>
+          remove uncached
+        </button>
+      </div>
+    )
+  }
+
+  const press = async (name: string) => {
+    await act(async () => {
+      screen.getByRole('button', { name }).click()
+    })
+  }
+
+  const renderCached = async () => {
+    const fetchMock = stubFetch()
+    render(<EditProbe schedule={s3} from={day(24)} to={day(26)} />)
+    await waitFor(() => expect(dayCell(25)).toHaveTextContent('4:d25'))
+
+    return fetchMock
+  }
+
+  it('puts a saved note in its day’s bucket without a refetch', async () => {
+    const fetchMock = await renderCached()
+
+    await press('add')
+
+    expect(dayCell(25)).toHaveTextContent('4:d25,9:added')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  // The period *is* its identity, so a re-save replaces rather than accumulates.
+  it('replaces a re-saved note in place, leaving no duplicate', async () => {
+    await renderCached()
+
+    await press('replace')
+
+    expect(dayCell(25)).toHaveTextContent('4:replaced')
+    expect(dayCell(25).textContent).not.toContain('d25')
+  })
+
+  it('takes a deleted note out of its bucket without a refetch', async () => {
+    const fetchMock = await renderCached()
+
+    await press('remove')
+
+    expect(dayCell(25)).toHaveTextContent('')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  // The rule is *don't display an empty note*, not *don't display one the server sent*.
+  it('hides a note the moment it is applied blank, whatever the delete does', async () => {
+    await renderCached()
+
+    await press('blank')
+
+    expect(dayCell(25)).toHaveTextContent('')
+  })
+
+  it('ignores a note whose day is not cached, leaving it to be fetched complete', async () => {
+    const fetchMock = await renderCached()
+
+    await press('uncached')
+    await press('remove uncached')
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(dayCell(24)).toHaveTextContent('4:d24')
   })
 })

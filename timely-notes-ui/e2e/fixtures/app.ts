@@ -1,11 +1,13 @@
 import { test as base, type Page } from '@playwright/test'
-import { FROZEN_NOW, NOTES, inWindow, noteDaysFor, type WireNote } from './notes'
+import { FROZEN_NOW, NOTES, WRITTEN_AT, inWindow, noteDaysFor, type WireNote } from './notes'
 import { ScheduleView } from './ScheduleView'
 
 const NOTES_ROUTE = '**/api/schedules/*/notes*'
 // A second pattern is not optional: `notes*` does not match `note-days`, so one route would leave
 // the calendar's requests escaping to a backend the stubbed lane does not run.
 const NOTE_DAYS_ROUTE = '**/api/schedules/*/note-days*'
+// A third: `*` stops at a separator, so `notes*` never reaches `/notes/2026-08-25/p4`.
+const NOTE_ROUTE = '**/api/schedules/*/notes/*/*'
 
 /** How far behind the frozen instant the clock starts — margin for the page load, not a wait. */
 const INSTALL_LEAD_MS = 10 * 60 * 1000
@@ -19,14 +21,26 @@ const windowsOf = (requests: URL[]) => [
   ),
 ]
 
+/** A write the browser made, as the spec reads it: the verb, the address, and what was sent. */
+export interface WriteRequest {
+  method: 'PUT' | 'DELETE'
+  shortName: string
+  day: string
+  ordinal: number
+  url: string
+  content?: string
+}
+
 /** Both read routes, stubbed from the fixtures and recording what the browser actually asked for. */
 export class ApiStub {
   readonly notesRequests: URL[] = []
   readonly noteDayRequests: URL[] = []
+  readonly writes: WriteRequest[] = []
 
   private notes: Record<string, WireNote[]> = { ...NOTES }
   private status = 200
   private delayMs = 0
+  private failWrites: number | null = null
 
   /** Reply to everything with this status instead; the body is an empty problem document. */
   failWith(status: number) {
@@ -40,6 +54,38 @@ export class ApiStub {
 
   setNotes(shortName: string, notes: WireNote[]) {
     this.notes = { ...this.notes, [shortName]: notes }
+  }
+
+  /** Answer every write with this status instead, leaving the store alone. */
+  failWritesWith(status: number) {
+    this.failWrites = status
+  }
+
+  /** Take a note out from under an open dialog, as a prune would. */
+  dropNote(shortName: string, day: string, ordinal: number) {
+    this.notes = {
+      ...this.notes,
+      [shortName]: (this.notes[shortName] ?? []).filter(
+        (note) => !(note.day === day && note.periodOrdinal === ordinal),
+      ),
+    }
+  }
+
+  /** What the store holds for a period — the assertion that it *became* something, not just was sent. */
+  noteAt(shortName: string, day: string, ordinal: number): WireNote | undefined {
+    return (this.notes[shortName] ?? []).find(
+      (note) => note.day === day && note.periodOrdinal === ordinal,
+    )
+  }
+
+  countAt(shortName: string, day: string, ordinal: number): number {
+    return (this.notes[shortName] ?? []).filter(
+      (note) => note.day === day && note.periodOrdinal === ordinal,
+    ).length
+  }
+
+  get writeSummary(): string[] {
+    return this.writes.map((write) => `${write.method} ${write.day}/p${write.ordinal}`)
   }
 
   get requests(): URL[] {
@@ -78,6 +124,53 @@ export class ApiStub {
         noteDaysFor((this.notes[shortName] ?? []).filter((note) => inWindow(note.day, from, to))),
       )
     })
+
+    // Behaves like the real upsert, so a spec can assert what the store *became*, not only what
+    // was sent: the same address twice is one note, 201 then 200.
+    await page.route(NOTE_ROUTE, async (route, request) => {
+      const { pathname } = new URL(request.url())
+      const [, , , shortName, , day, period] = pathname.split('/')
+      const ordinal = Number(period.slice(1))
+      const method = request.method() as 'PUT' | 'DELETE'
+      const content = method === 'PUT' ? JSON.parse(request.postData() ?? '{}').content : undefined
+
+      this.writes.push({ method, shortName, day, ordinal, url: request.url(), content })
+
+      if (this.failWrites !== null) {
+        await route.fulfill({ status: this.failWrites, contentType: 'application/json', body: '{}' })
+
+        return
+      }
+
+      const held = this.notes[shortName] ?? []
+      const existing = held.find((note) => note.day === day && note.periodOrdinal === ordinal)
+
+      if (method === 'DELETE') {
+        this.dropNote(shortName, day, ordinal)
+        await route.fulfill({ status: existing ? 204 : 404 })
+
+        return
+      }
+
+      const written: WireNote = {
+        day,
+        periodOrdinal: ordinal,
+        content: content ?? '',
+        createdAt: existing?.createdAt ?? WRITTEN_AT,
+        modifiedAt: WRITTEN_AT,
+      }
+
+      this.notes = {
+        ...this.notes,
+        [shortName]: [...held.filter((note) => note !== existing), written],
+      }
+
+      await route.fulfill({
+        status: existing ? 200 : 201,
+        contentType: 'application/json',
+        body: JSON.stringify(written),
+      })
+    })
   }
 
   private async reply(
@@ -110,7 +203,7 @@ export class ApiStub {
 interface AppFixtures {
   api: ApiStub
   scheduleView: ScheduleView
-  /** Everything the page logged, in order — `Save` still only reaches the console. */
+  /** Everything the page logged, in order. Nothing in the app logs any more; kept for a stray one. */
   logs: string[]
 }
 

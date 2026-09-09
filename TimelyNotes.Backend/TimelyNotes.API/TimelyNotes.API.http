@@ -58,4 +58,108 @@ Accept: application/json
 GET {{TimelyNotes.API_HostAddress}}/api/schedules/s1/note-days?searchFrom=2026-08-31&searchTo=2026-10-13
 Accept: application/json
 
+
+# Writes are addressed by the period itself: the Schedule, the day and the ordinal in the URL are
+# the note's identity, so the body carries content alone and a note can never be moved.
+@writeDay = 2026-08-28
+@writeOrdinal = p9
+
+### Write the note in that period — 201 the first time
+PUT {{TimelyNotes.API_HostAddress}}/api/schedules/s1/notes/{{writeDay}}/{{writeOrdinal}}
+Content-Type: application/json
+
+{
+  "content": "Written by hand."
+}
+
+### The identical request again — 200, and still exactly one note
+PUT {{TimelyNotes.API_HostAddress}}/api/schedules/s1/notes/{{writeDay}}/{{writeOrdinal}}
+Content-Type: application/json
+
+{
+  "content": "Written by hand."
+}
+
+### It is in the list for a window containing its day
+GET {{TimelyNotes.API_HostAddress}}/api/schedules/s1/notes?searchFrom={{writeDay}}&searchTo=2026-08-29
+Accept: application/json
+
+### Empty content is accepted — the client writes the clearing of a note like any other change
+PUT {{TimelyNotes.API_HostAddress}}/api/schedules/s1/notes/{{writeDay}}/{{writeOrdinal}}
+Content-Type: application/json
+
+{
+  "content": ""
+}
+
+### And now it is in neither read route — the record survives, the note does not
+GET {{TimelyNotes.API_HostAddress}}/api/schedules/s1/notes?searchFrom={{writeDay}}&searchTo=2026-08-29
+Accept: application/json
+
+###
+GET {{TimelyNotes.API_HostAddress}}/api/schedules/s1/note-days?searchFrom={{writeDay}}&searchTo=2026-08-29
+Accept: application/json
+
+### The same day and ordinal under another Schedule is a different note
+PUT {{TimelyNotes.API_HostAddress}}/api/schedules/s3/notes/{{writeDay}}/p4
+Content-Type: application/json
+
+{
+  "content": "A different note entirely."
+}
+
+### An ordinal s3 does not have — a 400, not a 404
+PUT {{TimelyNotes.API_HostAddress}}/api/schedules/s3/notes/{{writeDay}}/p9
+Content-Type: application/json
+
+{
+  "content": "Out of range."
+}
+
+### p0 anywhere — the ordinal is 1-based
+PUT {{TimelyNotes.API_HostAddress}}/api/schedules/s1/notes/{{writeDay}}/p0
+Content-Type: application/json
+
+{
+  "content": "Out of range."
+}
+
+### Null content — a 400 naming it; only *empty* is legal
+PUT {{TimelyNotes.API_HostAddress}}/api/schedules/s1/notes/{{writeDay}}/p10
+Content-Type: application/json
+
+{
+  "content": null
+}
+
+### An alias spelling of p9 — a 400, and it reaches no note at all
+PUT {{TimelyNotes.API_HostAddress}}/api/schedules/s1/notes/{{writeDay}}/p09
+Content-Type: application/json
+
+{
+  "content": "Padded."
+}
+
+### As are a sign and a capital: a period has exactly one spelling, like a Schedule
+PUT {{TimelyNotes.API_HostAddress}}/api/schedules/s1/notes/{{writeDay}}/P9
+Content-Type: application/json
+
+{
+  "content": "Capitalised."
+}
+
+### p9 *is* a period of s1, and is not one of s3 — the two sigils are read together
+PUT {{TimelyNotes.API_HostAddress}}/api/schedules/s3/notes/{{writeDay}}/p9
+Content-Type: application/json
+
+{
+  "content": "Not a period of s3."
+}
+
+### Delete it — 204
+DELETE {{TimelyNotes.API_HostAddress}}/api/schedules/s1/notes/{{writeDay}}/{{writeOrdinal}}
+
+### Delete it again — 404
+DELETE {{TimelyNotes.API_HostAddress}}/api/schedules/s1/notes/{{writeDay}}/{{writeOrdinal}}
+
 ###

@@ -26,6 +26,7 @@ public class InMemoryNoteRepository : INoteRepository
             .. _notes
                 .Where(note => note.ScheduleSpanHours == scheduleSpanHours)
                 .Where(note => note.Day >= searchFrom && note.Day < searchTo)
+                .Where(IsReadable)
                 .OrderByDescending(note => note.Day)
                 .ThenByDescending(note => note.PeriodOrdinal)
         ];
@@ -47,6 +48,7 @@ public class InMemoryNoteRepository : INoteRepository
             .. _notes
                 .Where(note => note.ScheduleSpanHours == scheduleSpanHours)
                 .Where(note => note.Day >= searchFrom && note.Day < searchTo)
+                .Where(IsReadable)
                 .GroupBy(note => note.Day)
                 .Select(day => new NoteDayCount(day.Key, day.Count()))
                 .OrderBy(count => count.Day)
@@ -54,6 +56,58 @@ public class InMemoryNoteRepository : INoteRepository
 
         return Task.FromResult(counts);
     }
+
+    /// <inheritdoc />
+    public Task<UpsertResult> Upsert(Note note, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+
+        var existing = Find(note.ScheduleSpanHours, note.Day, note.PeriodOrdinal);
+
+        if (existing is null)
+        {
+            _notes.Add(note);
+
+            return Task.FromResult(new UpsertResult(note, Created: true));
+        }
+
+        var replaced = new Note
+        {
+            ScheduleSpanHours = existing.ScheduleSpanHours,
+            Day = existing.Day,
+            PeriodOrdinal = existing.PeriodOrdinal,
+            Content = note.Content,
+            CreatedAt = existing.CreatedAt,
+            ModifiedAt = note.ModifiedAt
+        };
+
+        _notes[_notes.IndexOf(existing)] = replaced;
+
+        return Task.FromResult(new UpsertResult(replaced, Created: false));
+    }
+
+    /// <inheritdoc />
+    public Task<bool> Delete(
+        int scheduleSpanHours,
+        DateOnly day,
+        int periodOrdinal,
+        CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+
+        var existing = Find(scheduleSpanHours, day, periodOrdinal);
+
+        return Task.FromResult(existing is not null && _notes.Remove(existing));
+    }
+
+    /// <summary>The one predicate both reads share, so they cannot drift apart.</summary>
+    private static bool IsReadable(Note note) => !string.IsNullOrWhiteSpace(note.Content);
+
+    private Note? Find(int scheduleSpanHours, DateOnly day, int periodOrdinal) =>
+        _notes.SingleOrDefault(note =>
+            note.ScheduleSpanHours == scheduleSpanHours
+            && note.Day == day
+            && note.PeriodOrdinal == periodOrdinal);
 
     private static IEnumerable<Note> SeedNotes()
     {

@@ -19,13 +19,16 @@ import "@mdxeditor/editor/style.css";
 
 interface NoteEditorProps {
   markdown: string;
+  /** Every keystroke, as markdown: what autosave watches. */
+  onChange?: (markdown: string) => void;
 }
 
-const NoteEditor = forwardRef<MDXEditorMethods, NoteEditorProps>(({ markdown }, ref) => {
+const NoteEditor = forwardRef<MDXEditorMethods, NoteEditorProps>(({ markdown, onChange }, ref) => {
   return (
     <MDXEditor
       ref={ref}
       markdown={markdown}
+      onChange={onChange}
       className="note-editor"
       plugins={[
         headingsPlugin(),

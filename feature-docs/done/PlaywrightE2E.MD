@@ -539,6 +539,11 @@ the stubbed lane (§4).
 - **Specs for behaviour that does not exist yet** — creating or updating a note, day navigation,
   auth. `Save` still only reaches the console, and §6 asserts exactly that; it becomes a persistence
   assertion when the create endpoint lands.
+  **Since done, in `NoteAutosave.MD`:** the write path landed, and every console assertion in §6
+  above became a request assertion. `Save` and `Cancel` are gone — the dialog has one **Done**
+  button, the page object's `save`/`cancel` are now `done` and `saveStatus`, and the `logs` fixture
+  is kept only for a stray log. The stubbed lane's `api` fixture gained a third route that behaves
+  like the real upsert, so a spec asserts what the store *became* and not only what was sent.
 - **A backend test-data seam** (a reset endpoint, or a fixed-seed switch). The integrated lane works
   around the live seed by asserting on content rather than ids; if that lane grows, it will need one.
 - **Component-level Playwright testing** (`@playwright/experimental-ct-react`). Vitest already owns

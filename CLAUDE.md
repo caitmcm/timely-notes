@@ -54,9 +54,11 @@ Playwright's HTML reporter the default — `show-report` blocks the terminal.
 | Where | What |
 | --- | --- |
 | `Models/Schedules.cs` | The one place the backend knows a Schedule's shape: `Known {1,3,6}`, `PeriodCountFor`, `IsValidPeriodOrdinal`, and the only `s`-sigil parse/format. Adding a span is a one-line edit; a test enforces every member divides 24. |
+| `Models/Periods.cs` | The only `p`-sigil parse/format. `TryParse` takes the **Schedule's span first** — a period is a period *of* a Schedule, so an ordinal cannot be read without naming one. |
 | `Models/Note.cs` | The entity. `Models/NoteDayCount.cs` is the counts projection. |
-| `Repositories/` | `INoteRepository` + `InMemoryNoteRepository`, registered **singleton** so seeded state survives requests. |
+| `Repositories/` | `INoteRepository` + `InMemoryNoteRepository`, registered **singleton** so seeded state survives requests. Two reads, `Upsert` and `Delete`; `UpsertResult` says which of create/replace happened. |
 | `Endpoints/Notes/` | FastEndpoints REPR — `Request`/`Response`/`Endpoint`/`Validator`, one type per file. |
+| `Program.cs` | Registers `TimeProvider.System`. **Handlers never read the clock directly** — that is what makes a server-set stamp assertable rather than "roughly now". |
 | `TimelyNotes.API.http` | Ready-made requests for the list routes. |
 
 **Frontend — `timely-notes-ui/src/`**
@@ -64,6 +66,7 @@ Playwright's HTML reporter the default — `show-report` blocks the terminal.
 | Where | What |
 | --- | --- |
 | `App.tsx` | Owns the lot: selected Schedule, `pinned`, `calendarMonth`, the window, and the domain calls. Nothing below it fetches or calls `domain/`. |
+| `hooks/useNoteAutosave.ts` | The autosave engine: debounce, ceiling, dirty check, in-flight guard, save status. One `save`, no create-or-update state. |
 | `types/index.ts` | `DayKey`, `Note`, `Schedule`, `Period`, `SpanHours`. |
 | `domain/` | Pure time logic — `schedules`, `periods`, `notes`, `days`, `months`. No React, no fetch. |
 | `hooks/` | `useNow` (the only clock read), `useScheduleNotes` (the only note fetch), `useNoteDays` (markers, only while the calendar is open). |
@@ -111,6 +114,15 @@ Break one and the bug class it closed comes back. The reasoning is in `feature-d
 - **Selection is stored as `{ day, ordinal }`, not as a `Period`** — periods are rebuilt whenever the notes or the Schedule change, so a held reference goes stale.
 - **`.schedule-view` is the only scroll container** (`body` is `overflow: hidden`), and the toolbar is its sibling rather than its content, so it stays put while the days scroll.
 - **A `PeriodRow` renders its one note as text**, never as a second control; the selected row's single `Note` button opens *the* note, existing or empty. A second address inside a row is how two notes in one period became constructible.
+- **The write is an idempotent `PUT` upsert addressed by the period**, and the address has exactly one spelling. `2026-08-25/p4` names that note and nothing else, so a stale reference stops being a failure mode (the next save re-creates it), a double-invoked effect cannot make two notes, and a retry needs no thought. There is no `404`-recovery path because there is no `404`. → `NoteAutosave.MD`
+- **Both sigils bind as whole tokens and are parsed in code, never split by the route template.** `{schedule}` and `{period}`, not `s{span}` and `p{ordinal}`: letting the router split the sigil off hands the rest to `int.TryParse`, which accepts `04` and `+4`, and literal route segments match case-insensitively — so `p04`, `p+4` and `P4` all reached the note `p4` had made. A route constraint cannot fix it either, since ASP.NET's regex constraints run case-insensitive. `Schedules.TryParse` and `Periods.TryParse` are the only ways in, and both are strict about casing, sign, padding and stray text.
+- **A period is a period *of a Schedule*.** `Periods.TryParse(scheduleSpanHours, text, out ordinal)` takes the span first and rejects an ordinal that Schedule does not have, so there is no way to obtain a bare ordinal that means nothing on its own — `p9` is a period of `s1` and not of `s3`, and both facts come from one call.
+- **An empty note is legal at the API and invisible in it.** Emptiness is a *client policy* about when to write, not a data-integrity rule — pushing it into the validator would leave the UI unable to say "this is now blank". Both read routes omit it instead, on the same `IsNullOrWhiteSpace` predicate, expressed once in the repository: a route that hid empties from the list while counting them in the calendar would mark a day that renders blank.
+- **`isBlank` is the one definition of empty on the client**, and it decides *don't create*, *delete on close* and *don't display* alike — including against the local cache, so a note this session emptied leaves its row at once rather than on the next fetch.
+- **Nothing is written until the buffer holds something**, then a `PUT` 2s after typing stops and a forced one every 10s of continuous typing; flushes on close, on `visibilitychange` → hidden and on `pagehide`. An idle editor issues nothing however long it stays open. **Clearing a note is written like any other change**, so a session that dies afterwards does not restore the paragraph the user just deleted.
+- **Delete-on-close is best-effort and never load-bearing.** The emptiness is already saved, so a delete that never lands leaves a record no read route returns; it is not retried, and it fires **once per note, ever**, from `finish()` — Done, Escape or an unmount from above. It is issued outside the writes' `AbortController`, or the teardown that started it would cancel it.
+- **The dialog has no discard button, because clearing *is* the discard.** `Save` and `Cancel` are gone: by the time either could be pressed the text is already on the server. `Done` flushes and closes, and a status line says when this browser last succeeded.
+- **`useNoteAutosave` sets its mounted flag in the effect body, not only in the cleanup.** StrictMode tears a hook down and builds it again; a flag only ever cleared leaves every later save silently unable to report itself — a bug only the dev-mode integrated lane sees.
 - **E2E: `page.clock.install()` before the first navigation, `pauseAt()` once the page is up** — never `setFixedTime`, since the rollover journey fast-forwards. Clock frozen at 20:20 on 25/08/2026, zone `Europe/London`, locale `en-GB`. → `PlaywrightE2E.MD`
 - **Every per-day E2E handle goes through `day(heading)`.** Three days render at once, so an unscoped `getByRole('option')` matches three times and fails strict mode.
 
@@ -127,27 +139,42 @@ Break one and the bug class it closed comes back. The reasoning is in `feature-d
 
 ## Current state
 
-**Backend — two read slices, no writes.** `GET /api/schedules/{schedule}/notes?searchFrom=…&searchTo=…`
+**Backend — two reads and two writes.** `GET /api/schedules/{schedule}/notes?searchFrom=…&searchTo=…`
 lists a Schedule's notes over the **half-open** `[searchFrom, searchTo)`, newest first by
 `(Day, PeriodOrdinal)`. Both bounds are required plain dates, a window wider than 7 days is a
 `400`, and an unknown `{schedule}` is a `400` naming the parameter. `GET …/note-days` answers the
 same window as `[{ day, count }]` ascending for the calendar markers — empty days omitted, capped
-at 42 (the widest month grid), grouped in the repository. In-memory store seeded across today ± 3
-days. No persistence, no auth, no Schedule endpoints, no custom middleware — CORS and TLS both
-belong to the host. No HTTPS redirection: TLS terminates ahead of the app.
+at 42 (the widest month grid), grouped in the repository. **Neither read returns an empty note.**
+`PUT …/notes/{day}/p{ordinal}` writes the note in that period — `201` when it created, `200` when
+it replaced, the note in the body either way and no `Location`; the body carries **content alone**,
+empty accepted, capped at `UpsertNoteValidator.MaximumContentLength` (16,384). `DELETE` on the same
+address is `204`, or `404` when the period held none. A period the Schedule does not have — or any
+spelling but the exact one — is a `400` from the validator, not a `404`. `TimeProvider.System` is registered and injected, so
+`CreatedAt`/`ModifiedAt` are assertable. In-memory store seeded across today ± 3 days, now writable
+and still unsynchronised. No persistence, no auth, no Schedule endpoints, no custom middleware —
+CORS and TLS both belong to the host. No HTTPS redirection: TLS terminates ahead of the app.
 
 **Frontend — three days, a live clock, a month calendar.** The focus day and its two neighbours
 render as day sections in one scroll container, under a fixed toolbar (*Calendar*, *Go to today*).
 `CalendarDialog`'s Monday-first grid, marked from `note-days`, re-points the view; picking the
 current day is *Go to today*. `useNow` ticks on the minute and resyncs on visibility/focus.
 Markdown editing is `@mdxeditor/editor` — extend `NoteEditor`'s plugin list rather than adding a
-second editor. **Save only `console.log`s**; there is no write endpoint yet. No router, no state
-library. `timely-notes-ui/README.md` is still stock Vite template text.
+second editor. **Notes save themselves**: `useNoteAutosave` writes 2s after typing stops, forces one
+every 10s of continuous typing, and flushes on close, tab-hide and `pagehide`; the dialog's one
+button is **Done**, beside a `Saved HH:MM` / `Saving…` / `Not saved — retrying` line. `App` applies
+each write to `useScheduleNotes`'s cache rather than refetching. No router, no state library.
+`timely-notes-ui/README.md` is still stock Vite template text.
 
-**Tests.** ~235 Vitest specs; above them ~63 Playwright specs in the hermetic `stubbed` lane
-(built and previewed on `127.0.0.1:5174`, 2 workers, every `/api/**` call fulfilled from a fixture
-— note `notes*` does not match `note-days`, so both routes are stubbed) and 4 in `integrated`,
-which holds only the assertions about the two projects agreeing. Keep that lane small.
+**Tests.** 204 xUnit specs; ~317 Vitest specs; above them ~73 Playwright specs in the hermetic
+`stubbed` lane (built and previewed on `127.0.0.1:5174`, 2 workers, every `/api/**` call fulfilled
+from a fixture — note `notes*` matches neither `note-days` nor `notes/{day}/p{n}`, so all three
+routes are stubbed, and the write route upserts into a map so a spec can assert what the store
+*became*) and 5 in `integrated`, which holds only the assertions about the two projects agreeing.
+Keep that lane small. `NoteEditor` is mocked out in `App.test.tsx` and `NoteDialog.test.tsx`:
+MDXEditor emits no change event under jsdom, so typing there could never reach autosave, and its
+real behaviour is the Playwright lane's job.
 
-**Next:** `feature-docs/todo/NoteAutosave.MD` — save-on-first-content, autosave, `PUT` upsert and
-`DELETE`. Then `EmptyNotePruning.MD`.
+**Next:** `NoteAutosave.MD` is done — both by-hand walk-throughs passed and it is in `done/`.
+`NowOnTheGrid.MD` then `MenuAndNoteNow.MD` are the specified features waiting; `EmptyNotePruning.MD`
+is specified but **not scheduled**, since the read filter and the upsert together make it optional
+rather than owed.

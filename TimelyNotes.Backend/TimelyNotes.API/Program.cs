@@ -8,13 +8,15 @@ builder.Services
     .AddFastEndpoints()
     .SwaggerDocument();
 
-// Singleton so the in-memory seed survives across requests.
-builder.Services.AddSingleton<INoteRepository, InMemoryNoteRepository>();
+var store = builder.Services.AddNoteStore(builder.Configuration);
 
 // Handlers never read the clock directly, so a server-set stamp can be asserted rather than approximated.
 builder.Services.AddSingleton(TimeProvider.System);
 
 var app = builder.Build();
+
+// Twenty minutes looking for notes in the wrong store is what this line prevents.
+app.Logger.LogInformation("Note store: {NoteStore}", store);
 
 app.UseFastEndpoints();
 

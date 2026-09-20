@@ -3,14 +3,29 @@ using TimelyNotes.API.Models;
 namespace TimelyNotes.API.Repositories;
 
 /// <summary>
-/// Dev-only store, seeded across today ± 3 days. "Today" is frozen when the singleton is built, so
-/// a server left running overnight renders an empty day that looks like a frontend bug — restart it.
+/// A list, not a database. Kept so CI and the deployed app need no server; retired once Postgres
+/// is deployed. Empty until <see cref="Seed"/> is called.
 /// </summary>
 public class InMemoryNoteRepository : INoteRepository
 {
-    private readonly List<Note> _notes;
+    private readonly List<Note> _notes = [];
 
-    public InMemoryNoteRepository() => _notes = [.. SeedNotes()];
+    /// <summary>Singleton, so requests share the list; a write racing a read tears it.</summary>
+    private readonly Lock _gate = new();
+
+    /// <summary>
+    /// Replaces the contents with fixtures across today ± 3 days. "Today" is frozen at the call, so
+    /// a server left running overnight renders an empty day that looks like a frontend bug —
+    /// restart it. Replacing rather than appending keeps one note per period on a second call.
+    /// </summary>
+    public void Seed()
+    {
+        lock (_gate)
+        {
+            _notes.Clear();
+            _notes.AddRange(SeedNotes());
+        }
+    }
 
     /// <inheritdoc />
     public Task<IReadOnlyList<Note>> GetBySchedule(
@@ -21,17 +36,20 @@ public class InMemoryNoteRepository : INoteRepository
     {
         ct.ThrowIfCancellationRequested();
 
-        IReadOnlyList<Note> notes =
-        [
-            .. _notes
-                .Where(note => note.ScheduleSpanHours == scheduleSpanHours)
-                .Where(note => note.Day >= searchFrom && note.Day < searchTo)
-                .Where(IsReadable)
-                .OrderByDescending(note => note.Day)
-                .ThenByDescending(note => note.PeriodOrdinal)
-        ];
+        lock (_gate)
+        {
+            IReadOnlyList<Note> notes =
+            [
+                .. _notes
+                    .Where(note => note.ScheduleSpanHours == scheduleSpanHours)
+                    .Where(note => note.Day >= searchFrom && note.Day < searchTo)
+                    .Where(IsReadable)
+                    .OrderByDescending(note => note.Day)
+                    .ThenByDescending(note => note.PeriodOrdinal)
+            ];
 
-        return Task.FromResult(notes);
+            return Task.FromResult(notes);
+        }
     }
 
     /// <inheritdoc />
@@ -43,18 +61,21 @@ public class InMemoryNoteRepository : INoteRepository
     {
         ct.ThrowIfCancellationRequested();
 
-        IReadOnlyList<NoteDayCount> counts =
-        [
-            .. _notes
-                .Where(note => note.ScheduleSpanHours == scheduleSpanHours)
-                .Where(note => note.Day >= searchFrom && note.Day < searchTo)
-                .Where(IsReadable)
-                .GroupBy(note => note.Day)
-                .Select(day => new NoteDayCount(day.Key, day.Count()))
-                .OrderBy(count => count.Day)
-        ];
+        lock (_gate)
+        {
+            IReadOnlyList<NoteDayCount> counts =
+            [
+                .. _notes
+                    .Where(note => note.ScheduleSpanHours == scheduleSpanHours)
+                    .Where(note => note.Day >= searchFrom && note.Day < searchTo)
+                    .Where(IsReadable)
+                    .GroupBy(note => note.Day)
+                    .Select(day => new NoteDayCount(day.Key, day.Count()))
+                    .OrderBy(count => count.Day)
+            ];
 
-        return Task.FromResult(counts);
+            return Task.FromResult(counts);
+        }
     }
 
     /// <inheritdoc />
@@ -62,28 +83,44 @@ public class InMemoryNoteRepository : INoteRepository
     {
         ct.ThrowIfCancellationRequested();
 
-        var existing = Find(note.ScheduleSpanHours, note.Day, note.PeriodOrdinal);
+        var content = NoteContent.Normalise(note.Content);
 
-        if (existing is null)
+        // One acquisition: find and write split apart lets two callers add to the same period.
+        lock (_gate)
         {
-            _notes.Add(note);
+            var existing = Find(note.ScheduleSpanHours, note.Day, note.PeriodOrdinal);
 
-            return Task.FromResult(new UpsertResult(note, Created: true));
+            if (existing is null)
+            {
+                var created = new Note
+                {
+                    ScheduleSpanHours = note.ScheduleSpanHours,
+                    Day = note.Day,
+                    PeriodOrdinal = note.PeriodOrdinal,
+                    Content = content,
+                    CreatedAt = note.CreatedAt,
+                    ModifiedAt = note.ModifiedAt
+                };
+
+                _notes.Add(created);
+
+                return Task.FromResult(new UpsertResult(created, Created: true));
+            }
+
+            var replaced = new Note
+            {
+                ScheduleSpanHours = existing.ScheduleSpanHours,
+                Day = existing.Day,
+                PeriodOrdinal = existing.PeriodOrdinal,
+                Content = content,
+                CreatedAt = existing.CreatedAt,
+                ModifiedAt = note.ModifiedAt
+            };
+
+            _notes[_notes.IndexOf(existing)] = replaced;
+
+            return Task.FromResult(new UpsertResult(replaced, Created: false));
         }
-
-        var replaced = new Note
-        {
-            ScheduleSpanHours = existing.ScheduleSpanHours,
-            Day = existing.Day,
-            PeriodOrdinal = existing.PeriodOrdinal,
-            Content = note.Content,
-            CreatedAt = existing.CreatedAt,
-            ModifiedAt = note.ModifiedAt
-        };
-
-        _notes[_notes.IndexOf(existing)] = replaced;
-
-        return Task.FromResult(new UpsertResult(replaced, Created: false));
     }
 
     /// <inheritdoc />
@@ -95,13 +132,16 @@ public class InMemoryNoteRepository : INoteRepository
     {
         ct.ThrowIfCancellationRequested();
 
-        var existing = Find(scheduleSpanHours, day, periodOrdinal);
+        lock (_gate)
+        {
+            var existing = Find(scheduleSpanHours, day, periodOrdinal);
 
-        return Task.FromResult(existing is not null && _notes.Remove(existing));
+            return Task.FromResult(existing is not null && _notes.Remove(existing));
+        }
     }
 
     /// <summary>The one predicate both reads share, so they cannot drift apart.</summary>
-    private static bool IsReadable(Note note) => !string.IsNullOrWhiteSpace(note.Content);
+    private static bool IsReadable(Note note) => NoteContent.IsReadable(note.Content);
 
     private Note? Find(int scheduleSpanHours, DateOnly day, int periodOrdinal) =>
         _notes.SingleOrDefault(note =>

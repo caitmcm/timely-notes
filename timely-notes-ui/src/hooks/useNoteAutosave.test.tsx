@@ -232,6 +232,76 @@ describe('useNoteAutosave', () => {
     })
   })
 
+  // Whether the buffer reached the server is the hook's own fact, and the caller has to be able to
+  // read it the moment the promise resolves. Reporting it through `status` would make the caller
+  // depend on React having rendered in between, which it is not owed.
+  describe('reporting whether anything is left unsaved', () => {
+    it('flush resolves true when the write succeeded', async () => {
+      const view = setup()
+
+      await change(view, 'Written.')
+
+      await act(async () => {
+        await expect(view.result.current.flush()).resolves.toBe(true)
+      })
+    })
+
+    it('flush resolves false when the write failed', async () => {
+      const save = vi.fn().mockRejectedValue(new Error('offline'))
+      const view = setup({ save })
+
+      await change(view, 'Into the void.')
+
+      await act(async () => {
+        await expect(view.result.current.flush()).resolves.toBe(false)
+      })
+    })
+
+    it('flush resolves true when there was nothing to write', async () => {
+      const view = setup({ initialContent: 'Unchanged.' })
+
+      await act(async () => {
+        await expect(view.result.current.flush()).resolves.toBe(true)
+      })
+    })
+
+    it('flush resolves true again once a retry gets through', async () => {
+      const save = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue(undefined)
+      const view = setup({ save })
+
+      await change(view, 'Second time lucky.')
+
+      await act(async () => {
+        await expect(view.result.current.flush()).resolves.toBe(false)
+      })
+      await act(async () => {
+        await expect(view.result.current.flush()).resolves.toBe(true)
+      })
+    })
+
+    it('finish resolves false when the write it flushed failed', async () => {
+      const save = vi.fn().mockRejectedValue(new Error('offline'))
+      const view = setup({ save })
+
+      await change(view, 'Into the void.')
+
+      await act(async () => {
+        await expect(view.result.current.finish()).resolves.toBe(false)
+      })
+    })
+
+    /** A blank note that was never written is nothing at all, not something unsaved. */
+    it('finish resolves true on a buffer that was never worth writing', async () => {
+      const view = setup()
+
+      await change(view, '')
+
+      await act(async () => {
+        await expect(view.result.current.finish()).resolves.toBe(true)
+      })
+    })
+  })
+
   describe('finish', () => {
     it('flushes before it removes, so a failed delete still leaves the emptiness saved', async () => {
       const order: string[] = []
@@ -415,7 +485,8 @@ describe('useNoteAutosave', () => {
       })
 
       await act(async () => {
-        await expect(view.result.current.finish()).resolves.toBeUndefined()
+        // True even so: the emptiness was written, and only the tidying delete fell over.
+        await expect(view.result.current.finish()).resolves.toBe(true)
       })
       await advance(CEILING_MS * 2)
 

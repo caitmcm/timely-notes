@@ -13,9 +13,40 @@ public class InMemoryNoteRepositoryTests
     private static (DateOnly From, DateOnly To) WholeSeed => (Day(-4), Day(4));
 
     [Fact]
-    public async Task GetBySchedule_ReturnsSeededNotes_ForAKnownSchedule()
+    public async Task ANewRepository_HoldsNothingUntilItIsSeeded()
     {
         var repository = new InMemoryNoteRepository();
+
+        Assert.Empty(await AllSeeded(repository));
+    }
+
+    [Fact]
+    public async Task Seed_FillsTheStore()
+    {
+        var repository = new InMemoryNoteRepository();
+
+        repository.Seed();
+
+        Assert.NotEmpty(await AllSeeded(repository));
+    }
+
+    /// <summary>A period holds one note, so a second call must not double the fixtures.</summary>
+    [Fact]
+    public async Task Seed_Twice_LeavesTheSameNotes()
+    {
+        var repository = new InMemoryNoteRepository();
+
+        repository.Seed();
+        var once = (await AllSeeded(repository)).Count;
+        repository.Seed();
+
+        Assert.Equal(once, (await AllSeeded(repository)).Count);
+    }
+
+    [Fact]
+    public async Task GetBySchedule_ReturnsSeededNotes_ForAKnownSchedule()
+    {
+        var repository = SeededRepository();
 
         var notes = await repository.GetBySchedule(
             1, WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken);
@@ -30,7 +61,7 @@ public class InMemoryNoteRepositoryTests
     [InlineData(6)]
     public async Task GetBySchedule_SeedsEverySchedule(int scheduleSpanHours)
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = SeededRepository();
 
         var notes = await repository.GetBySchedule(
             scheduleSpanHours, WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken);
@@ -43,7 +74,7 @@ public class InMemoryNoteRepositoryTests
     [Fact]
     public async Task GetBySchedule_ReturnsEmpty_ForAnUnknownSchedule()
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = SeededRepository();
 
         var notes = await repository.GetBySchedule(
             5, WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken);
@@ -54,7 +85,7 @@ public class InMemoryNoteRepositoryTests
     [Fact]
     public async Task GetBySchedule_PopulatesEveryNoteField()
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = SeededRepository();
 
         var note = (await repository.GetBySchedule(
             1, WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken)).First();
@@ -70,7 +101,7 @@ public class InMemoryNoteRepositoryTests
     [Fact]
     public async Task SeededNotes_AreIdentifiedByScheduleDayAndPeriodOrdinal()
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = SeededRepository();
 
         var notes = await AllSeeded(repository);
         var keys = notes
@@ -84,7 +115,7 @@ public class InMemoryNoteRepositoryTests
     [Fact]
     public async Task EverySeededNotesPeriodOrdinal_IsValidForItsSchedule()
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = SeededRepository();
 
         var notes = await AllSeeded(repository);
 
@@ -101,7 +132,7 @@ public class InMemoryNoteRepositoryTests
     [InlineData(6)]
     public async Task TheSeed_PutsTwoNotesInDifferentPeriodsOfToday(int scheduleSpanHours)
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = SeededRepository();
 
         var notes = await repository.GetBySchedule(
             scheduleSpanHours, Today, Day(1), TestContext.Current.CancellationToken);
@@ -116,7 +147,7 @@ public class InMemoryNoteRepositoryTests
     [InlineData(6)]
     public async Task GetBySchedule_SeedsNotesAcrossTheSurroundingWeek_IncludingToday(int scheduleSpanHours)
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = SeededRepository();
 
         var notes = await repository.GetBySchedule(
             scheduleSpanHours, WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken);
@@ -130,7 +161,7 @@ public class InMemoryNoteRepositoryTests
     [Fact]
     public async Task GetBySchedule_ReturnsOnlyNotesWhoseDayFallsInTheRange()
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = SeededRepository();
 
         var notes = await repository.GetBySchedule(
             1, Today, Day(1), TestContext.Current.CancellationToken);
@@ -142,7 +173,7 @@ public class InMemoryNoteRepositoryTests
     [Fact]
     public async Task GetBySchedule_FiltersOnDayRatherThanCreatedAt()
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = SeededRepository();
 
         // Every seeded CreatedAt is today, so a three-day-back window proves Day does the filtering.
         var past = await repository.GetBySchedule(
@@ -156,7 +187,7 @@ public class InMemoryNoteRepositoryTests
     [Fact]
     public async Task GetBySchedule_IncludesANoteOnExactlySearchFrom()
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = SeededRepository();
         var boundary = (await AllSeeded(repository)).Min(note => note.Day);
 
         var notes = await repository.GetBySchedule(
@@ -168,7 +199,7 @@ public class InMemoryNoteRepositoryTests
     [Fact]
     public async Task GetBySchedule_ExcludesANoteOnExactlySearchTo()
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = SeededRepository();
         var boundary = (await AllSeeded(repository)).Max(note => note.Day);
 
         var notes = await repository.GetBySchedule(
@@ -180,7 +211,7 @@ public class InMemoryNoteRepositoryTests
     [Fact]
     public async Task GetBySchedule_AdjacentWindowsNeverReturnTheSameNoteTwice()
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = SeededRepository();
 
         var earlier = await repository.GetBySchedule(
             1, Day(-3), Today, TestContext.Current.CancellationToken);
@@ -195,7 +226,7 @@ public class InMemoryNoteRepositoryTests
     [Fact]
     public async Task GetBySchedule_DropsAnotherSchedulesNotesInTheSameRange()
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = SeededRepository();
 
         var notes = await repository.GetBySchedule(
             3, Today, Day(1), TestContext.Current.CancellationToken);
@@ -208,7 +239,7 @@ public class InMemoryNoteRepositoryTests
     [Fact]
     public async Task GetBySchedule_OrdersNotesNewestFirstByDayThenPeriodOrdinal()
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = SeededRepository();
 
         var notes = await repository.GetBySchedule(
             1, WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken);
@@ -224,7 +255,7 @@ public class InMemoryNoteRepositoryTests
     [Fact]
     public async Task GetBySchedule_ReturnsAnEmptyList_ForARangeHoldingNothing()
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = SeededRepository();
 
         var notes = await repository.GetBySchedule(
             1, Day(300), Day(301), TestContext.Current.CancellationToken);
@@ -236,7 +267,7 @@ public class InMemoryNoteRepositoryTests
     [Fact]
     public async Task GetDayCountsBySchedule_ReturnsOneEntryPerDayThatHasNotes()
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = SeededRepository();
 
         var counts = await repository.GetDayCountsBySchedule(
             1, WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken);
@@ -251,7 +282,7 @@ public class InMemoryNoteRepositoryTests
     [Fact]
     public async Task GetDayCountsBySchedule_CountsEveryNoteOnADay()
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = SeededRepository();
 
         var counts = await repository.GetDayCountsBySchedule(
             1, Today, Day(1), TestContext.Current.CancellationToken);
@@ -264,7 +295,7 @@ public class InMemoryNoteRepositoryTests
     [Fact]
     public async Task GetDayCountsBySchedule_OrdersDaysAscending()
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = SeededRepository();
 
         var counts = await repository.GetDayCountsBySchedule(
             1, WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken);
@@ -275,7 +306,7 @@ public class InMemoryNoteRepositoryTests
     [Fact]
     public async Task GetDayCountsBySchedule_OmitsDaysWithNoNotes()
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = SeededRepository();
 
         var counts = await repository.GetDayCountsBySchedule(
             1, WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken);
@@ -287,7 +318,7 @@ public class InMemoryNoteRepositoryTests
     [Fact]
     public async Task GetDayCountsBySchedule_HonoursTheHalfOpenWindow()
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = SeededRepository();
         var all = await repository.GetBySchedule(
             1, WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken);
         var first = all.Min(note => note.Day);
@@ -306,7 +337,7 @@ public class InMemoryNoteRepositoryTests
     [Fact]
     public async Task GetDayCountsBySchedule_DropsAnotherSchedulesNotes()
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = SeededRepository();
 
         var counts = await repository.GetDayCountsBySchedule(
             1, Today, Day(1), TestContext.Current.CancellationToken);
@@ -320,7 +351,7 @@ public class InMemoryNoteRepositoryTests
     [Fact]
     public async Task GetDayCountsBySchedule_ReturnsAnEmptyList_ForARangeHoldingNothing()
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = SeededRepository();
 
         var counts = await repository.GetDayCountsBySchedule(
             1, Day(300), Day(301), TestContext.Current.CancellationToken);
@@ -362,7 +393,7 @@ public class InMemoryNoteRepositoryTests
     [Fact]
     public async Task Upsert_CreatesANoteInAnEmptyPeriod()
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = SeededRepository();
 
         var result = await repository.Upsert(
             NoteAt(1, WriteDay, 9, "New."), TestContext.Current.CancellationToken);
@@ -378,7 +409,7 @@ public class InMemoryNoteRepositoryTests
     [Fact]
     public async Task Upsert_LeavesTheSeedAlone()
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = SeededRepository();
         var before = (await AllSeeded(repository)).Count;
 
         await repository.Upsert(
@@ -390,7 +421,7 @@ public class InMemoryNoteRepositoryTests
     [Fact]
     public async Task Upsert_ReplacesTheContentAndModifiedAt_LeavingTheRestOfTheNoteAlone()
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = SeededRepository();
         var createdAt = new DateTimeOffset(2026, 8, 25, 9, 0, 0, TimeSpan.Zero);
         var modifiedAt = createdAt.AddHours(2);
 
@@ -415,7 +446,7 @@ public class InMemoryNoteRepositoryTests
     [Fact]
     public async Task Upsert_SentTwice_LeavesExactlyOneNote()
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = SeededRepository();
         var note = NoteAt(1, WriteDay, 9, "Same.");
 
         await repository.Upsert(note, TestContext.Current.CancellationToken);
@@ -427,7 +458,7 @@ public class InMemoryNoteRepositoryTests
     [Fact]
     public async Task Upsert_TreatsTheSamePeriodUnderAnotherScheduleAsADifferentNote()
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = SeededRepository();
 
         await repository.Upsert(
             NoteAt(1, WriteDay, 4, "Hourly."), TestContext.Current.CancellationToken);
@@ -447,7 +478,7 @@ public class InMemoryNoteRepositoryTests
     public async Task Upsert_ReachesADifferentNote_WhenAnyPartOfTheAddressDiffers(
         int scheduleSpanHours, int dayOffset, int periodOrdinal)
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = SeededRepository();
 
         await repository.Upsert(
             NoteAt(1, WriteDay, 9, "Original."), TestContext.Current.CancellationToken);
@@ -465,7 +496,7 @@ public class InMemoryNoteRepositoryTests
     [Fact]
     public async Task Delete_RemovesTheNoteFromBothReads()
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = SeededRepository();
         await repository.Upsert(
             NoteAt(1, WriteDay, 9, "Doomed."), TestContext.Current.CancellationToken);
 
@@ -480,7 +511,7 @@ public class InMemoryNoteRepositoryTests
     [Fact]
     public async Task Delete_ReportsFalse_ForAPeriodHoldingNothing()
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = SeededRepository();
 
         Assert.False(
             await repository.Delete(1, WriteDay, 9, TestContext.Current.CancellationToken));
@@ -489,7 +520,7 @@ public class InMemoryNoteRepositoryTests
     [Fact]
     public async Task Delete_LeavesTheSamePeriodUnderAnotherScheduleAlone()
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = SeededRepository();
         await repository.Upsert(
             NoteAt(1, WriteDay, 4, "Hourly."), TestContext.Current.CancellationToken);
         await repository.Upsert(
@@ -509,7 +540,7 @@ public class InMemoryNoteRepositoryTests
     [InlineData("\n\n")]
     public async Task GetBySchedule_OmitsANoteWhoseContentIsEmpty(string content)
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = SeededRepository();
         await repository.Upsert(
             NoteAt(1, WriteDay, 9, content), TestContext.Current.CancellationToken);
 
@@ -522,7 +553,7 @@ public class InMemoryNoteRepositoryTests
     [InlineData("\n\n")]
     public async Task GetDayCountsBySchedule_OmitsADayWhoseOnlyNoteIsEmpty(string content)
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = SeededRepository();
         await repository.Upsert(
             NoteAt(1, WriteDay, 9, content), TestContext.Current.CancellationToken);
 
@@ -536,7 +567,7 @@ public class InMemoryNoteRepositoryTests
     [Fact]
     public async Task GetDayCountsBySchedule_CountsOnlyTheReadableNotesOfADay()
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = SeededRepository();
         await repository.Upsert(
             NoteAt(1, WriteDay, 9, "Readable."), TestContext.Current.CancellationToken);
         await repository.Upsert(
@@ -554,7 +585,7 @@ public class InMemoryNoteRepositoryTests
     [InlineData("-")]
     public async Task GetBySchedule_KeepsANoteThatIsSmallButNotEmpty(string content)
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = SeededRepository();
         await repository.Upsert(
             NoteAt(1, WriteDay, 9, content), TestContext.Current.CancellationToken);
 
@@ -565,7 +596,7 @@ public class InMemoryNoteRepositoryTests
     [Fact]
     public async Task Upsert_OverAnEmptiedNote_ReplacesRatherThanCreates()
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = SeededRepository();
         await repository.Upsert(
             NoteAt(1, WriteDay, 9, "First."), TestContext.Current.CancellationToken);
         await repository.Upsert(
@@ -581,12 +612,95 @@ public class InMemoryNoteRepositoryTests
     [Fact]
     public async Task Delete_RemovesAnEmptyNote()
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = SeededRepository();
         await repository.Upsert(
             NoteAt(1, WriteDay, 9, ""), TestContext.Current.CancellationToken);
 
         Assert.True(await repository.Delete(1, WriteDay, 9, TestContext.Current.CancellationToken));
         Assert.False(await repository.Delete(1, WriteDay, 9, TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>Not the whitespace the client sent, so the read filter can be length alone.</summary>
+    [Theory]
+    [InlineData("   ")]
+    [InlineData("\n\n")]
+    [InlineData("\t")]
+    [InlineData(" ")]
+    public async Task Upsert_StoresWhitespaceOnlyContentAsEmpty(string content)
+    {
+        var repository = SeededRepository();
+
+        var result = await repository.Upsert(
+            NoteAt(1, WriteDay, 9, content), TestContext.Current.CancellationToken);
+
+        Assert.Equal(string.Empty, result.Note.Content);
+    }
+
+    [Fact]
+    public async Task Upsert_StoresWhitespaceOnlyContentAsEmpty_OnTheReplacePathToo()
+    {
+        var repository = SeededRepository();
+        await repository.Upsert(
+            NoteAt(1, WriteDay, 9, "First."), TestContext.Current.CancellationToken);
+
+        var result = await repository.Upsert(
+            NoteAt(1, WriteDay, 9, " \n "), TestContext.Current.CancellationToken);
+
+        Assert.False(result.Created);
+        Assert.Equal(string.Empty, result.Note.Content);
+    }
+
+    /// <summary>Normalising the empty case must not trim a note that has something in it.</summary>
+    [Fact]
+    public async Task Upsert_KeepsSurroundingWhitespaceOnContentThatIsNotBlank()
+    {
+        var repository = SeededRepository();
+
+        var result = await repository.Upsert(
+            NoteAt(1, WriteDay, 9, "  hi  "), TestContext.Current.CancellationToken);
+
+        Assert.Equal("  hi  ", result.Note.Content);
+        Assert.Equal("  hi  ", Assert.Single(await NotesAround(repository, 1, WriteDay)).Content);
+    }
+
+    /// <summary>Unsynchronised, this failed about one run in three — as two endpoint specs did.</summary>
+    [Fact]
+    public async Task Upsert_FromManyRequestsAtOnce_KeepsEveryNote()
+    {
+        var repository = new InMemoryNoteRepository();
+
+        await Task.WhenAll(
+            Enumerable.Range(1, 24).Select(ordinal => Task.Run(() =>
+                repository.Upsert(
+                    NoteAt(1, WriteDay, ordinal, $"Note {ordinal}."),
+                    TestContext.Current.CancellationToken))));
+
+        Assert.Equal(24, (await NotesAround(repository, 1, WriteDay)).Count);
+    }
+
+    [Fact]
+    public async Task ReadsAndWrites_AtOnce_NeverTearTheStore()
+    {
+        var repository = new InMemoryNoteRepository();
+        var writes = Enumerable.Range(1, 24).Select(ordinal => Task.Run(() =>
+            repository.Upsert(
+                NoteAt(1, WriteDay, ordinal, $"Note {ordinal}."),
+                TestContext.Current.CancellationToken)));
+        var reads = Enumerable.Range(1, 24).Select(_ => Task.Run(() =>
+            NotesAround(repository, 1, WriteDay)));
+
+        var exception = await Record.ExceptionAsync(
+            () => Task.WhenAll(writes.Cast<Task>().Concat(reads)));
+
+        Assert.Null(exception);
+    }
+
+    private static InMemoryNoteRepository SeededRepository()
+    {
+        var repository = new InMemoryNoteRepository();
+        repository.Seed();
+
+        return repository;
     }
 
     private static async Task<IReadOnlyList<Note>> AllSeeded(InMemoryNoteRepository repository)

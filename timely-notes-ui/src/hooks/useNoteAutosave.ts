@@ -25,10 +25,15 @@ export interface NoteAutosave {
   /** When this browser last wrote successfully; `null` until it has. */
   savedAt: Date | null
   onChange: (markdown: string) => void
-  /** Write now if there is anything to write. Never deletes — this is the tab-hidden path. */
-  flush: () => Promise<void>
-  /** The close path: flush, then delete the note if it is blank. */
-  finish: () => Promise<void>
+  /**
+   * Write now if there is anything to write. Never deletes — this is the tab-hidden path.
+   * Resolves to whether the buffer is safely on the server, read from the buffer itself rather
+   * than from `status`: a caller reading state React has not rendered yet would get the last
+   * answer, not this one.
+   */
+  flush: () => Promise<boolean>
+  /** The close path: flush, then delete the note if it is blank. Reports as `flush` does. */
+  finish: () => Promise<boolean>
 }
 
 /**
@@ -162,14 +167,18 @@ export function useNoteAutosave({
     }
 
     await write()
+
+    // A failed write leaves the buffer dirty on purpose, so "clean" is also "the attempt got
+    // through". No React state is involved: this has to be true the instant the write settles.
+    return !hasSomethingToSay()
   }, [write])
 
   const finish = useCallback(async () => {
-    await flush()
+    const saved = await flush()
 
     // Blank with nothing ever written is nothing at all; and one delete per note, ever.
     if (removed.current || !exists.current || !isBlank(content.current)) {
-      return
+      return saved
     }
 
     removed.current = true
@@ -179,6 +188,8 @@ export function useNoteAutosave({
     } catch {
       // Best-effort by design: the note is already empty on the server, and no read route shows it.
     }
+
+    return saved
   }, [flush])
 
   const closing = useRef(finish)

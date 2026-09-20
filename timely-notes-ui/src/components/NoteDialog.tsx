@@ -81,13 +81,6 @@ function NoteBody({ slot, save, remove, readNow, onClose }: NoteBodyProps) {
     readNow,
   })
 
-  // Read after an await, when the render that set `status` has already happened.
-  const latestStatus = useRef(status)
-
-  useEffect(() => {
-    latestStatus.current = status
-  })
-
   const doneAttempts = useRef(0)
 
   useEffect(() => {
@@ -113,10 +106,13 @@ function NoteBody({ slot, save, remove, readNow, onClose }: NoteBodyProps) {
 
   const done = async () => {
     doneAttempts.current += 1
-    await finish()
+
+    // What `finish` reports, never the rendered `status`: this runs in the microtask after the
+    // write settles, and React owes us no render by then — under load it reliably has not.
+    const saved = await finish()
 
     // A first failure holds the dialog open over text that is not saved; a second Done is a decision.
-    if (latestStatus.current === 'failed' && doneAttempts.current === 1) {
+    if (!saved && doneAttempts.current === 1) {
       return
     }
 

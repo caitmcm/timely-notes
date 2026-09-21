@@ -114,8 +114,12 @@ const row = (dayOfMonth: number, name: string) =>
 
 const headings = () => screen.getAllByRole('listbox').map((list) => list.getAttribute('aria-label'))
 
-/** The rollover notice, which comes and goes — and carries the one-tap way back with it. */
-const rolloverNotice = () => screen.queryByText(/^It is now /)
+/** The notice, which comes and goes with the window — and carries the way back with it. */
+const rolloverNotice = () => screen.queryByText(/^Viewing /)
+
+/** The two arrows, the first and last children of the scroller. */
+const earlier = () => screen.getByRole('button', { name: 'Earlier days' })
+const later = () => screen.getByRole('button', { name: 'Later days' })
 
 /** Lives inside the notice, so it exists only while the view is away from today. */
 const goToToday = () => screen.getByRole('button', { name: 'Go to today' })
@@ -401,6 +405,13 @@ describe('App — live clock', () => {
     await act(async () => {})
   }
 
+  /** Freezes the window on a chosen day — the one press that moves both pieces of state. */
+  const pickFromCalendar = async (dayOfMonth: number) => {
+    await click(screen.getByRole('button', { name: 'Calendar' }))
+    await click(screen.getByRole('button', { name: new RegExp(`^${dayOfMonth}(,|$)`) }))
+    await act(async () => {})
+  }
+
   /** Mount at `startAt` and let the mount fetch settle. */
   const mountAt = async (startAt: Date) => {
     vi.setSystemTime(startAt)
@@ -474,23 +485,37 @@ describe('App — live clock', () => {
     expect(bounds(requests(fetchMock)[1])).toEqual(['2026-08-27', '2026-08-28'])
   })
 
-  it('stays put over midnight once the user has selected a row', async () => {
+  // The selection stops following the clock; the window, which the press never touched, does not.
+  it('carries the window over midnight while the selected row stays behind', async () => {
     const fetchMock = await mountAt(onThe25th(23, 59))
     await click(row(25, '06:00 – 09:00'))
 
     await advance(2 * 60_000)
 
-    expect(headings()).toEqual(['24/08/2026', '25/08/2026', '26/08/2026'])
+    expect(headings()).toEqual(['25/08/2026', '26/08/2026', '27/08/2026'])
     expect(selectedName()).toBe('06:00 – 09:00')
     expect(section(august(25))).toContainElement(screen.getByRole('option', { selected: true }))
-    // The new day is one of the three on show, so the marker moves on to it while the view stays.
     expect(currentName()).toBe('00:00 – 03:00')
     expect(section(august(26))).toContainElement(
       screen
         .getAllByRole('option')
         .find((option) => option.getAttribute('aria-current') === 'time')!,
     )
-    expect(requests(fetchMock)).toHaveLength(1)
+    // One more day on show, and only that one asked for.
+    expect(requests(fetchMock)).toHaveLength(2)
+  })
+
+  it('holds the window still over midnight once the arrows have frozen it', async () => {
+    const fetchMock = await mountAt(onThe25th(23, 59))
+    await click(later())
+    await act(async () => {})
+    expect(headings()).toEqual(['27/08/2026', '28/08/2026', '29/08/2026'])
+    const asked = requests(fetchMock).length
+
+    await advance(2 * 60_000)
+
+    expect(headings()).toEqual(['27/08/2026', '28/08/2026', '29/08/2026'])
+    expect(requests(fetchMock)).toHaveLength(asked)
   })
 
   it('leaves an open dialog alone over midnight', async () => {
@@ -502,32 +527,58 @@ describe('App — live clock', () => {
 
     expect(screen.getByRole('dialog')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '21:00 – 00:00' })).toBeInTheDocument()
-    expect(headings()).toEqual(['24/08/2026', '25/08/2026', '26/08/2026'])
   })
 
   // The control itself is always there; only the notice explaining it comes and goes.
-  it('notices the rollover only under a committed view', async () => {
+  it('notices only once the window has carried today off screen', async () => {
     await mountAt(onThe25th(23, 59))
     expect(rolloverNotice()).not.toBeInTheDocument()
 
     await click(row(25, '06:00 – 09:00'))
     await advance(2 * 60_000)
+    expect(rolloverNotice()).not.toBeInTheDocument()
 
-    expect(rolloverNotice()).toHaveTextContent('26/08/2026')
+    await click(later())
+    await act(async () => {})
+
+    expect(rolloverNotice()).toHaveTextContent('Viewing 28/08/2026 – 30/08/2026.')
     expect(goToToday()).toBeInTheDocument()
   })
 
-  it('shows no notice when the view followed the clock by itself', async () => {
+  it('shows no notice when the window followed the clock by itself', async () => {
     await mountAt(onThe25th(23, 59))
 
     await advance(2 * 60_000)
 
+    expect(rolloverNotice()).not.toBeInTheDocument()
+  })
+
+  // Frozen one day ahead, so the rollover is what takes today out from under the window.
+  it('raises the notice on a rollover that carries today out of a frozen window', async () => {
+    await mountAt(onThe25th(23, 59))
+    await pickFromCalendar(24)
+    expect(headings()).toEqual(['23/08/2026', '24/08/2026', '25/08/2026'])
+    expect(rolloverNotice()).not.toBeInTheDocument()
+
+    await advance(2 * 60_000)
+
+    expect(rolloverNotice()).toHaveTextContent('Viewing 23/08/2026 – 25/08/2026.')
+  })
+
+  it('raises no notice on a rollover that leaves today inside a frozen window', async () => {
+    await mountAt(onThe25th(23, 59))
+    await pickFromCalendar(26)
+    expect(headings()).toEqual(['25/08/2026', '26/08/2026', '27/08/2026'])
+
+    await advance(2 * 60_000)
+
+    expect(headings()).toEqual(['25/08/2026', '26/08/2026', '27/08/2026'])
     expect(rolloverNotice()).not.toBeInTheDocument()
   })
 
   it('moves the view to the current day when Go to today is pressed', async () => {
     const fetchMock = await mountAt(onThe25th(23, 59))
-    await click(row(25, '06:00 – 09:00'))
+    await click(later())
     await advance(2 * 60_000)
 
     await click(goToToday())
@@ -536,7 +587,7 @@ describe('App — live clock', () => {
     expect(headings()).toEqual(['25/08/2026', '26/08/2026', '27/08/2026'])
     expect(selectedName()).toBe('00:00 – 03:00')
     expect(rolloverNotice()).not.toBeInTheDocument()
-    expect(requests(fetchMock)).toHaveLength(2)
+    expect(requests(fetchMock).length).toBeGreaterThan(1)
   })
 
   // The way back is the notice, and the notice is only there when there is somewhere to come back
@@ -548,15 +599,15 @@ describe('App — live clock', () => {
     expect(screen.queryByRole('button', { name: 'Go to today' })).not.toBeInTheDocument()
   })
 
-  it('carries the way back inside the status region, so the rollover is still announced', async () => {
-    await mountAt(onThe25th(23, 59))
-    await click(row(25, '06:00 – 09:00'))
+  it('carries the way back inside the status region, so the move is still announced', async () => {
+    await mountAt(onThe25th(20, 20))
 
-    await advance(2 * 60_000)
+    await click(later())
+    await act(async () => {})
 
     const notice = screen.getByRole('status')
 
-    expect(notice).toHaveTextContent('26/08/2026')
+    expect(notice).toHaveTextContent('Viewing 27/08/2026 – 29/08/2026.')
     expect(within(notice).getByRole('button', { name: 'Go to today' })).toBeInTheDocument()
   })
 
@@ -702,7 +753,7 @@ describe('App — calendar navigation', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Previous month' }))
     await userEvent.click(screen.getByRole('button', { name: '15' }))
 
-    expect(rolloverNotice()).toHaveTextContent('25/08/2026')
+    expect(rolloverNotice()).toHaveTextContent('Viewing 14/07/2026 – 16/07/2026.')
     expect(screen.queryByText('July 2026')).not.toBeInTheDocument()
   })
 
@@ -1090,5 +1141,169 @@ describe('App — the menu returns focus', () => {
     await chooseSchedule('6h')
 
     expect(screen.getByRole('button', { name: 'Menu' })).toHaveFocus()
+  })
+})
+
+/**
+ * The window and the selection are two pieces of state that move for different reasons. These are
+ * the assertions that hold them apart — everything here is about what does *not* move.
+ */
+describe('App — the window and the selection', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  const threeDays = ['24/08/2026', '25/08/2026', '26/08/2026']
+
+  it('leaves the three days exactly where they are when a row on the last of them is pressed', async () => {
+    stubFetch()
+    renderApp()
+    await screen.findByRole('option', { selected: true })
+
+    await userEvent.click(row(26, '06:00 – 09:00'))
+
+    expect(headings()).toEqual(threeDays)
+  })
+
+  it('highlights the pressed row, and no row on any other day', async () => {
+    stubFetch()
+    renderApp()
+    await screen.findByRole('option', { selected: true })
+
+    await userEvent.click(row(24, '12:00 – 15:00'))
+
+    const selected = screen.getAllByRole('option', { selected: true })
+    expect(selected).toHaveLength(1)
+    expect(section(august(24))).toContainElement(selected[0])
+    expect(selected[0]).toHaveAccessibleName('12:00 – 15:00')
+  })
+
+  it('asks for nothing when a row is pressed: the window it would need is already on screen', async () => {
+    const fetchMock = stubFetch()
+    renderApp()
+    await screen.findByRole('option', { selected: true })
+    const before = requests(fetchMock).length
+
+    await userEvent.click(row(26, '06:00 – 09:00'))
+    await userEvent.click(row(24, '12:00 – 15:00'))
+
+    expect(requests(fetchMock)).toHaveLength(before)
+  })
+
+  it('steps the window a whole three days on, abutting the ones left', async () => {
+    stubFetch()
+    renderApp()
+    await screen.findByRole('option', { selected: true })
+
+    await userEvent.click(later())
+
+    expect(headings()).toEqual(['27/08/2026', '28/08/2026', '29/08/2026'])
+  })
+
+  it('steps the window a whole three days back', async () => {
+    stubFetch()
+    renderApp()
+    await screen.findByRole('option', { selected: true })
+
+    await userEvent.click(earlier())
+
+    expect(headings()).toEqual(['21/08/2026', '22/08/2026', '23/08/2026'])
+  })
+
+  it('returns to the three it started on when stepped forward and back', async () => {
+    stubFetch()
+    renderApp()
+    await screen.findByRole('option', { selected: true })
+
+    await userEvent.click(later())
+    await userEvent.click(earlier())
+
+    expect(headings()).toEqual(threeDays)
+  })
+
+  // The arrows read other days; they are not a way of choosing one.
+  it('leaves the selection behind when the window steps away, and finds it again on the way back', async () => {
+    stubFetch()
+    renderApp()
+    await screen.findByRole('option', { selected: true })
+    await userEvent.click(row(25, '06:00 – 09:00'))
+
+    await userEvent.click(later())
+    expect(screen.queryAllByRole('option', { selected: true })).toHaveLength(0)
+
+    await userEvent.click(earlier())
+
+    const selected = screen.getByRole('option', { selected: true })
+    expect(selected).toHaveAccessibleName('06:00 – 09:00')
+    expect(section(august(25))).toContainElement(selected)
+  })
+
+  it('says nothing about the window while today is one of the three on screen', async () => {
+    stubFetch()
+    renderApp()
+    await screen.findByRole('option', { selected: true })
+
+    await userEvent.click(row(26, '06:00 – 09:00'))
+
+    expect(rolloverNotice()).not.toBeInTheDocument()
+  })
+
+  it('says what is being viewed once today has been stepped off screen, and follows further steps', async () => {
+    stubFetch()
+    renderApp()
+    await screen.findByRole('option', { selected: true })
+
+    await userEvent.click(later())
+    expect(screen.getByRole('status')).toHaveTextContent('Viewing 27/08/2026 – 29/08/2026.')
+    expect(within(screen.getByRole('status')).getByRole('button', { name: 'Go to today' })).toBeInTheDocument()
+
+    await userEvent.click(later())
+
+    expect(screen.getByRole('status')).toHaveTextContent('Viewing 30/08/2026 – 01/09/2026.')
+  })
+
+  it('restores both the window and the clock-following selection from Go to today', async () => {
+    stubFetch()
+    renderApp()
+    await screen.findByRole('option', { selected: true })
+    await userEvent.click(row(24, '06:00 – 09:00'))
+    await userEvent.click(later())
+
+    await userEvent.click(goToToday())
+
+    expect(headings()).toEqual(threeDays)
+    expect(rolloverNotice()).not.toBeInTheDocument()
+    expect(screen.getByRole('option', { selected: true })).toHaveAccessibleName('18:00 – 21:00')
+    expect(section(august(25))).toContainElement(screen.getByRole('option', { selected: true }))
+  })
+
+  it('leaves the window where it is when the Schedule changes, re-deriving the ordinal from now', async () => {
+    stubFetch({ s3: s3Notes, s1: [] })
+    renderApp()
+    await screen.findByRole('option', { selected: true })
+    await userEvent.click(later())
+    await userEvent.click(row(28, '06:00 – 09:00'))
+
+    await chooseSchedule('1h')
+
+    await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(72))
+    expect(headings()).toEqual(['27/08/2026', '28/08/2026', '29/08/2026'])
+    const selected = screen.getByRole('option', { selected: true })
+    expect(selected).toHaveAccessibleName('20:00 – 21:00')
+    expect(section(august(28))).toContainElement(selected)
+  })
+
+  it('opens a note from a neighbouring day on that row’s address, window unmoved', async () => {
+    const fetchMock = stubFetch()
+    renderApp()
+    await screen.findByRole('option', { selected: true })
+
+    await userEvent.click(row(26, '06:00 – 09:00'))
+    await userEvent.click(screen.getByRole('button', { name: 'Note' }))
+    await write('Into tomorrow morning.')
+    await userEvent.click(screen.getByRole('button', { name: 'Done' }))
+
+    expect(headings()).toEqual(threeDays)
+    expect(writes(fetchMock)).toEqual(['PUT 2026-08-26/p3'])
   })
 })

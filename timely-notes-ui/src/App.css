@@ -145,6 +145,27 @@
   background: var(--surface);
 }
 
+/* Content, not chrome: the lower one is reached by scrolling to the end of the last day. */
+.schedule-view__step {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  padding: 0.5rem 0;
+  border: none;
+  background: transparent;
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+
+.schedule-view__step:hover {
+  color: var(--ink);
+}
+
+.schedule-view__step:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
 .day-section__day {
   position: sticky;
   top: 0;

@@ -94,9 +94,18 @@ export class ScheduleView {
     return this.page.locator('.app__header')
   }
 
-  /** Comes and goes with the focus day; the header's buttons never do. */
+  /** Comes and goes with the window; the header's buttons never do. */
   get rolloverNotice(): Locator {
-    return this.page.getByText(/^It is now /)
+    return this.page.getByText(/^Viewing /)
+  }
+
+  /** The two arrows: content, not chrome — the first and last children of the scroller. */
+  get earlierDaysButton(): Locator {
+    return this.page.getByRole('button', { name: 'Earlier days' })
+  }
+
+  get laterDaysButton(): Locator {
+    return this.page.getByRole('button', { name: 'Later days' })
   }
 
   /** Lives inside the notice, so it exists only while the view is away from today. */

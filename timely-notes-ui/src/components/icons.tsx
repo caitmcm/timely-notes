@@ -39,6 +39,18 @@ export const NoteNowIcon = () => (
   </svg>
 )
 
+export const ChevronUpIcon = () => (
+  <svg {...glyph}>
+    <path d="m5 15 7-7 7 7" />
+  </svg>
+)
+
+export const ChevronDownIcon = () => (
+  <svg {...glyph}>
+    <path d="m5 9 7 7 7-7" />
+  </svg>
+)
+
 export const CloseIcon = () => (
   <svg {...glyph}>
     <line x1="6" y1="6" x2="18" y2="18" />

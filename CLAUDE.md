@@ -68,10 +68,10 @@ HTML reporter the default — `show-report` blocks the terminal.
 
 | Where | What |
 | --- | --- |
-| `App.tsx` | Owns the lot: Schedule, `pinned`, `calendarMonth`, the window, the domain calls. Nothing below it fetches. |
+| `App.tsx` | Owns the lot: Schedule, `anchorDay`, `selected`, `calendarMonth`, the domain calls. Nothing below it fetches. |
 | `hooks/useNoteAutosave.ts` | The autosave engine: debounce, ceiling, dirty check, in-flight guard, save status. |
 | `hooks/` | `useNow` (the only clock read), `useScheduleNotes` (the only note fetch), `useNoteDays` (calendar markers). |
-| `domain/` | Pure time logic — `schedules`, `periods`, `notes`, `days`, `months`. No React, no fetch. |
+| `domain/` | Pure time logic — `schedules`, `periods`, `notes`, `days`, `months`, `window`. No React, no fetch. |
 | `types/index.ts` | `DayKey`, `Note`, `Schedule`, `Period`, `SpanHours`. |
 | `api/notesApi.ts` | The `fetch` wrapper; every route takes a required `AbortSignal`. |
 | `components/` | `MenuDrawer`, `SchedulePicker`, `ScheduleView`, `DaySection`, `PeriodRow`, `NoteDialog`, `NoteEditor`, `CalendarDialog`, `MonthGrid`, `icons`. |
@@ -101,7 +101,7 @@ Per `feature-docs/WORKFLOW.MD` — one feature, one document, end to end:
 
 ## Invariants
 
-Eight rules nothing in the build enforces, where the wrong version looks reasonable. Every other
+Eleven rules nothing in the build enforces, where the wrong version looks reasonable. Every other
 constraint is held by a type or by a named test — those are not restated here. Reasoning is in the
 feature document named.
 
@@ -113,7 +113,8 @@ feature document named.
 - **Delete-on-close is best-effort and never load-bearing** — once per note ever, issued outside the writes' `AbortController`. → `NoteAutosave.MD`
 - **Never decide anything after an `await` by reading React state.** `flush` and `finish` **return** whether the buffer reached the server. → `LocalPostgres.MD` §8
 - **`.schedule-view` is the only scroll container** (`body` is `overflow: hidden`), and `.app__header` is its sibling, not its content. → `ScrollingSchedule.MD`, `MenuAndNoteNow.MD`
-- **`Note now` opens on the current period, never on the selection** — it un-pins, then waits for the day to load rather than opening on an unloaded one. → `MenuAndNoteNow.MD`
+- **Selecting a period never moves the window.** `anchorDay` and `selected` are separate state; only navigation writes the anchor. → `DayWindowNavigation.MD`
+- **`Note now` opens on the current period, never on the selection** — it clears both, then waits for the day to load rather than opening on an unloaded one. → `MenuAndNoteNow.MD`
 - **A dialog that unmounts on close restores focus itself, from an effect** — `<dialog>`'s own restore never runs, and a handler is too early: on Escape the browser's close sequence lands last. → `MenuAndNoteNow.MD`
 
 ## Code style
@@ -137,18 +138,23 @@ app, the whole test suite — seeded across today ± 3 days. `Postgres` is EF Co
 `postgresql-x64-18`, migrations applied by hand, connection string in user secrets under
 `ConnectionStrings:Notes`. Local development only; nothing deployed has persistence yet.
 
-**Frontend.** The focus day and its two neighbours render in one scroll container under a single
+**Frontend.** Two pieces of state, moved by different things: `anchorDay` is the window — the three
+days on screen, `anchor ± 1` — and `selected` is the chosen row. `null` on either means it follows
+the clock, and selecting a row never writes the anchor. `domain/window.ts` holds the arithmetic. The
+three days render in one scroll container with `Earlier days` and `Later days` as its first and last
+children, each stepping the window a whole three days so consecutive windows abut. Above it a single
 fixed header: `Menu` at the left, the title, `Calendar` and `Note now` at the right, all three icon
 buttons named by `aria-label` and `title`. The Schedule lives in `MenuDrawer`, a left-anchored modal
 `<dialog>` that closes on any Schedule press; `Go to today` lives in the `CalendarDialog` as *Today*
-and inside the rollover notice, which is the only place it appears. `Note now` un-pins and opens the
-current period. Markdown editing is `@mdxeditor/editor` — extend `NoteEditor`'s plugin list rather
+and inside the `Viewing <first> – <last>.` notice, which appears only while the window has carried
+today off screen, and those are the only two places it appears. `Note now` clears both pieces of
+state and opens the current period. Markdown editing is `@mdxeditor/editor` — extend `NoteEditor`'s plugin list rather
 than adding a second editor. Notes save themselves through `useNoteAutosave`, the dialog's one
 button is **Done**, and `App` applies each write to `useScheduleNotes`'s cache rather than
 refetching. No router, no state library. `timely-notes-ui/README.md` is still stock Vite template
 text.
 
-**Tests.** 274 xUnit, all against the in-memory store; ~345 Vitest; ~81 Playwright in the hermetic
+**Tests.** 274 xUnit, all against the in-memory store; ~382 Vitest; ~89 Playwright in the hermetic
 `stubbed` lane (previewed on `127.0.0.1:5174`, every `/api/**` call fulfilled from a fixture) and 5
 in `integrated`, which holds only the assertions about the two projects agreeing — keep that lane
 small. `NoteEditor` is mocked in `App.test.tsx` and `NoteDialog.test.tsx`: MDXEditor emits no

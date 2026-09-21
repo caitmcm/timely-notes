@@ -121,7 +121,8 @@ test('rolls an untouched view over at midnight, asking only for the day it gaine
   ])
 })
 
-test('leaves a committed view where it is at midnight, and says what day it now is', async ({
+// The press committed the selection, not the window: the window was never following the selection.
+test('carries the window over midnight while the selected row stays behind', async ({
   page,
   scheduleView,
 }) => {
@@ -129,15 +130,31 @@ test('leaves a committed view where it is at midnight, and says what day it now 
 
   await page.clock.fastForward(FOUR_HOURS)
 
-  await expect(scheduleView.rolloverNotice).toContainText(`It is now ${NEXT}.`)
-  expect(await scheduleView.dayHeadings()).toEqual(['24/08/2026', FOCUS, NEXT])
+  await expect
+    .poll(async () => await scheduleView.dayHeadings())
+    .toEqual([FOCUS, NEXT, '27/08/2026'])
   await expect(scheduleView.day(FOCUS).selectedRow).toHaveAttribute('aria-label', '06:00 – 09:00')
-  // The marker follows the clock onto a day still on show; the selection stays behind.
+  // The marker follows the clock onto the day it is now on; the selection stays where it was put.
   await expect(scheduleView.day(NEXT).currentRow).toHaveAttribute('aria-label', '00:00 – 03:00')
-
-  await scheduleView.goToTodayButton.click()
-  expect(await scheduleView.dayHeadings()).toEqual([FOCUS, NEXT, '27/08/2026'])
   await expect(scheduleView.rolloverNotice).toHaveCount(0)
+})
+
+// The bug this feature closes: a press on a neighbouring day rebuilt the column under the reader.
+test('redraws nothing when a period on a neighbouring day is selected', async ({
+  scheduleView,
+}) => {
+  const before = await scheduleView.dayHeadings()
+  const row = scheduleView.day(NEXT).row('12:00 – 15:00')
+  // Scrolled to first, so what is measured afterwards is the app moving the view and not the
+  // browser bringing the newly focused row into it.
+  await row.scrollIntoViewIfNeeded()
+  const scrollTop = await scheduleView.scroller.evaluate((element) => element.scrollTop)
+
+  await row.click()
+
+  await expect(scheduleView.day(NEXT).selectedRow).toHaveAttribute('aria-label', '12:00 – 15:00')
+  expect(await scheduleView.dayHeadings()).toEqual(before)
+  expect(await scheduleView.scroller.evaluate((element) => element.scrollTop)).toBe(scrollTop)
 })
 
 test('keeps an open dialog open across midnight, on its own period', async ({

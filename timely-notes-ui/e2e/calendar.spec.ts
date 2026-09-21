@@ -144,7 +144,7 @@ test('raises the rollover notice on a jump, and drops it on Go to today', async 
   await scheduleView.calendarButton.click()
   await scheduleView.gridDay(17).click()
 
-  await expect(scheduleView.rolloverNotice).toContainText(`It is now ${FOCUS}.`)
+  await expect(scheduleView.rolloverNotice).toContainText('Viewing 16/08/2026 – 18/08/2026.')
 
   await scheduleView.goToTodayButton.click()
 

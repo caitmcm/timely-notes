@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { deleteNote, saveNote } from './api/notesApi'
-import { addDays, dayKeyOf, eachDay } from './domain/days'
+import { dayKeyOf, eachDay } from './domain/days'
 import { monthGrid, monthStartOf } from './domain/months'
 import {
   assignNotes,
   buildPeriods,
-  formatDayHeading,
   ordinalOf,
 } from './domain/periods'
 import { DEFAULT_SCHEDULE, SCHEDULES } from './domain/schedules'
+import { formatDayRange, shiftAnchor, windowContains, windowOf } from './domain/window'
 import { useNow } from './hooks/useNow'
 import { useNoteDays } from './hooks/useNoteDays'
 import { useScheduleNotes } from './hooks/useScheduleNotes'
@@ -26,34 +26,36 @@ interface AppProps {
 }
 
 /**
- * What the user has committed to: the day being read and the row chosen on it. `null` means the
- * view still follows the clock. The address, not a `Period` — periods are rebuilt whenever the
- * notes or the Schedule change, so a held object reference would go stale.
+ * The row the user has chosen. The address, not a `Period` — periods are rebuilt whenever the notes
+ * or the Schedule change, so a held object reference would go stale.
+ *
+ * It never writes the window: choosing a row is a statement about that row and nothing else.
  */
-interface Pinned {
+interface Selection {
   day: DayKey
   ordinal: number
 }
-
-/** Days either side of the focus day. The window is always these three; it never grows. */
-const NEIGHBOUR_DAYS = 1
 
 function App({ now: nowProp }: AppProps) {
   const { now, readNow } = useNow(nowProp)
 
   const [schedule, setSchedule] = useState<Schedule>(DEFAULT_SCHEDULE)
-  const [pinned, setPinned] = useState<Pinned | null>(null)
+
+  // Two pieces of state, moved by different things — the window by navigation, the selection by a
+  // press. `null` on either means it still follows the clock.
+  const [anchorDay, setAnchorDay] = useState<DayKey | null>(null)
+  const [selected, setSelected] = useState<Selection | null>(null)
 
   // Everything derived keys off the day, never off `now`: `now` is a fresh Date every minute, so
   // memoising on it would rebuild the window and refire the fetch on every tick.
   const currentDay = useMemo(() => dayKeyOf(now), [now])
 
-  // Unpinned, the view *is* the clock — derived rather than stored, so a rollover moves it with no
-  // effect to fire and nothing to keep in step.
-  const focusDay = pinned?.day ?? currentDay
+  // Following the clock, each *is* the clock — derived rather than stored, so a rollover moves them
+  // with no effect to fire and nothing to keep in step.
+  const anchor = anchorDay ?? currentDay
+  const selectedDay = selected?.day ?? currentDay
 
-  const first = addDays(focusDay, -NEIGHBOUR_DAYS)
-  const last = addDays(focusDay, NEIGHBOUR_DAYS)
+  const { first, last } = windowOf(anchor)
 
   const { notesFor, isLoaded, error, applyNote, removeNote } = useScheduleNotes(
     schedule,
@@ -61,7 +63,7 @@ function App({ now: nowProp }: AppProps) {
     last,
   )
 
-  const selectedOrdinal = pinned?.ordinal ?? ordinalOf(now, schedule.spanHours)
+  const selectedOrdinal = selected?.ordinal ?? ordinalOf(now, schedule.spanHours)
 
   const [dialogSlot, setDialogSlot] = useState<NoteSlot | null>(null)
   const [isNoteNowPending, setIsNoteNowPending] = useState(false)
@@ -69,7 +71,7 @@ function App({ now: nowProp }: AppProps) {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const menuButtonRef = useRef<HTMLButtonElement>(null)
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
-  const [calendarMonth, setCalendarMonth] = useState(() => monthStartOf(focusDay))
+  const [calendarMonth, setCalendarMonth] = useState(() => monthStartOf(anchor))
   const weeks = useMemo(() => monthGrid(calendarMonth), [calendarMonth])
 
   const {
@@ -89,11 +91,13 @@ function App({ now: nowProp }: AppProps) {
     [first, last, schedule, notesFor, isLoaded],
   )
 
-  const awayFromToday = focusDay !== currentDay
+  // Only the window can carry today off screen, so the window is what the notice asks about.
+  const awayFromToday = !windowContains(anchor, currentDay)
 
   // The one path `Note now` takes. It reads the period out of `days` by `selectedOrdinal`, which
-  // with `pinned` null *is* the current period — so nothing here touches `now` and no tick refetches.
-  // Derivation cannot replace it: a derived slot would follow the clock over an open dialog.
+  // with `selected` null *is* the current period — so nothing here touches `now` and no tick
+  // refetches. Derivation cannot replace it: a derived slot would follow the clock over an open
+  // dialog.
   useEffect(() => {
     if (!isNoteNowPending) {
       return
@@ -122,8 +126,8 @@ function App({ now: nowProp }: AppProps) {
     setDialogSlot({ day: currentDay, period })
   }, [isNoteNowPending, error, days, currentDay, selectedOrdinal])
 
-  // The drawer unmounts rather than closing, so `<dialog>`'s own focus restore never runs. After the
-  // commit, not in the handler: on Escape the browser's close sequence would otherwise land last.
+  // The drawer unmounts rather than closing, so the dialog element's own focus restore never runs.
+  // After the commit, not in the handler: on Escape the browser's close sequence would land last.
   const wasMenuOpen = useRef(false)
 
   useEffect(() => {
@@ -144,34 +148,41 @@ function App({ now: nowProp }: AppProps) {
       return
     }
 
-    // Re-chunking the day leaves a pinned ordinal counting the wrong grid, so start again from now.
+    // Re-chunking the day invalidates a stored ordinal, not a stored day: the window is left alone.
     setSchedule(next)
-    setPinned((current) => current && { ...current, ordinal: ordinalOf(now, next.spanHours) })
+    setSelected((current) => current && { ...current, ordinal: ordinalOf(now, next.spanHours) })
   }
 
   const handleOpenNote = (day: DayKey, period: Period) => {
-    setPinned({ day, ordinal: period.ordinal })
+    setSelected({ day, ordinal: period.ordinal })
     setDialogSlot({ day, period })
   }
 
-  /** Selecting a row is a commitment: the view stops following the clock. */
+  /** Selecting a row stops the selection following the clock. It never moves the window. */
   const handleSelect = (day: DayKey, period: Period) =>
-    setPinned({ day, ordinal: period.ordinal })
+    setSelected({ day, ordinal: period.ordinal })
 
-  const goToToday = () => setPinned(null)
+  const goToToday = () => {
+    setAnchorDay(null)
+    setSelected(null)
+  }
 
-  /** Un-pins and asks for the open; the effect below is what performs it, once the day is there. */
+  /** The arrows are a way of reading other days, not of choosing one: the selection stays put. */
+  const showEarlier = () => setAnchorDay(shiftAnchor(anchor, -1))
+  const showLater = () => setAnchorDay(shiftAnchor(anchor, 1))
+
+  /** Clears both and asks for the open; the effect above performs it, once the day is there. */
   const handleNoteNow = () => {
-    setPinned(null)
+    goToToday()
     setIsNoteNowPending(true)
   }
 
   const openCalendar = () => {
-    setCalendarMonth(monthStartOf(focusDay))
+    setCalendarMonth(monthStartOf(anchor))
     setIsCalendarOpen(true)
   }
 
-  /** Choosing from the calendar is a commitment, exactly as selecting a row is. */
+  /** The one press that moves both: where to look, and what is chosen when you get there. */
   const handlePickDay = (day: DayKey) => {
     setIsCalendarOpen(false)
 
@@ -181,7 +192,8 @@ function App({ now: nowProp }: AppProps) {
       return
     }
 
-    setPinned({ day, ordinal: 1 })
+    setAnchorDay(day)
+    setSelected({ day, ordinal: 1 })
   }
 
   // The address is the row the user pressed — the same before the note exists, while it does, and
@@ -248,11 +260,11 @@ function App({ now: nowProp }: AppProps) {
         </p>
       )}
 
-      {/* The region announces the rollover; the button inside it is the way back. A button alone
-          is never announced, so the two jobs stay separate. */}
+      {/* The region answers *where am I?* — the range on screen, not the date. The button inside it
+          is the way back; a button alone is never announced, so the two jobs stay separate. */}
       {awayFromToday && (
         <p className="app__status" role="status">
-          It is now {formatDayHeading(currentDay)}.{' '}
+          Viewing {formatDayRange(first, last)}.{' '}
           <button type="button" className="app__status-action" onClick={goToToday}>
             Go to today
           </button>
@@ -263,10 +275,12 @@ function App({ now: nowProp }: AppProps) {
         days={days}
         spanHours={schedule.spanHours}
         now={now}
-        focusDay={focusDay}
+        selectedDay={selectedDay}
         selectedOrdinal={selectedOrdinal}
         onSelect={handleSelect}
         onOpenNote={handleOpenNote}
+        onShowEarlier={showEarlier}
+        onShowLater={showLater}
       />
 
       <MenuDrawer
@@ -281,7 +295,7 @@ function App({ now: nowProp }: AppProps) {
         monthStart={calendarMonth}
         weeks={weeks}
         currentDay={currentDay}
-        focusDay={focusDay}
+        focusDay={selectedDay}
         countFor={countFor}
         isLoading={isCalendarLoading}
         error={calendarError}

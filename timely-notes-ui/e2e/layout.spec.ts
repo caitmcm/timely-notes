@@ -17,6 +17,7 @@ test.beforeEach(async ({ scheduleView }) => {
 })
 
 test('fits all 24 rows of a day inside that day’s period list at 1h', async ({ scheduleView }) => {
+  await scheduleView.openMenu()
   await scheduleView.schedule('1h').click()
 
   const day = scheduleView.day(FOCUS)
@@ -44,11 +45,13 @@ test('makes a 6h row six times a 1h row, over a day of unchanging height', async
 
   // The second row, not the first: `.period-row:first-child` drops its top border, so only the
   // rows that carry one are comparable across two different row counts.
+  await scheduleView.openMenu()
   await scheduleView.schedule('1h').click()
   await expect(day.rows).toHaveCount(24)
   const hourly = await heightOf(day.rows.nth(1))
   const hourlyDay = await heightOf(day.periodList)
 
+  await scheduleView.openMenu()
   await scheduleView.schedule('6h').click()
   await expect(day.rows).toHaveCount(4)
   const sixHourly = await heightOf(day.rows.nth(1))
@@ -58,15 +61,13 @@ test('makes a 6h row six times a 1h row, over a day of unchanging height', async
   expect(sixHourlyDay).toBeCloseTo(hourlyDay, 0)
 })
 
-test('holds the navigation toolbar still while the days scroll beneath it', async ({
-  scheduleView,
-}) => {
-  const before = await scheduleView.toolbar.boundingBox()
+test('holds the header still while the days scroll beneath it', async ({ scheduleView }) => {
+  const before = await scheduleView.header.boundingBox()
 
   await scheduleView.scroller.evaluate((element) => element.scrollTo(0, element.scrollHeight))
 
   expect(await scheduleView.scroller.evaluate((element) => element.scrollTop)).toBeGreaterThan(0)
-  expect(await scheduleView.toolbar.boundingBox()).toEqual(before)
+  expect(await scheduleView.header.boundingBox()).toEqual(before)
 })
 
 /** The left border and the padding that reserves room for it, in pixels. */

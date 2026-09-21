@@ -310,3 +310,48 @@ test('gives a blank editor on an empty period after a filled one was closed', as
 
   await expect(scheduleView.editor).toHaveText('')
 })
+
+/** 20:20 on the 25th, `s3`: the clock sits in p7. */
+test('Note now opens the period the clock is in, with its own note', async ({ scheduleView }) => {
+  await scheduleView.noteNowButton.click()
+
+  await expect(scheduleView.dialog.getByRole('heading').first()).toHaveText('18:00 – 21:00')
+  await expect(scheduleView.editor.getByRole('heading', { name: 'Stand-up' })).toBeVisible()
+})
+
+test('Note now opens the current period, not the row selected', async ({ scheduleView }) => {
+  await scheduleView.day(FOCUS).row('00:00 – 03:00').click()
+
+  await scheduleView.noteNowButton.click()
+
+  await expect(scheduleView.dialog.getByRole('heading').first()).toHaveText('18:00 – 21:00')
+})
+
+test('Note now brings the view back to today from a day reached by calendar', async ({
+  scheduleView,
+}) => {
+  await scheduleView.calendarButton.click()
+  await scheduleView.gridDay(17).click()
+  await expect(scheduleView.rolloverNotice).toBeVisible()
+
+  await scheduleView.noteNowButton.click()
+
+  expect(await scheduleView.dayHeadings()).toEqual(['24/08/2026', FOCUS, '26/08/2026'])
+  await expect(scheduleView.rolloverNotice).toHaveCount(0)
+  await expect(scheduleView.dialog.getByRole('heading').first()).toHaveText('18:00 – 21:00')
+})
+
+/** Four hours past 20:20 is 00:20 on the 26th: a new day, and its first period. */
+test('Note now opens the new day’s first period after a rollover', async ({
+  page,
+  scheduleView,
+}) => {
+  await page.clock.fastForward(4 * 60 * 60 * 1000)
+  await expect
+    .poll(async () => await scheduleView.dayHeadings())
+    .toEqual([FOCUS, '26/08/2026', '27/08/2026'])
+
+  await scheduleView.noteNowButton.click()
+
+  await expect(scheduleView.dialog.getByRole('heading').first()).toHaveText('00:00 – 03:00')
+})

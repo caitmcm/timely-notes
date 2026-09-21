@@ -54,26 +54,54 @@ export class ScheduleView {
     )
   }
 
+  /** Scoped to the drawer: the picker is only in the document while the menu is open. */
   schedule(label: string): Locator {
-    return this.page.getByRole('button', { name: label, exact: true })
+    return this.menu.getByRole('button', { name: label, exact: true })
+  }
+
+  get menuButton(): Locator {
+    return this.page.getByRole('button', { name: 'Menu' })
+  }
+
+  get menu(): Locator {
+    return this.page.locator('dialog.menu-drawer')
+  }
+
+  async openMenu() {
+    await this.menuButton.click()
+    await this.menu.waitFor()
+  }
+
+  async closeMenu() {
+    await this.menu.getByRole('button', { name: 'Close' }).click()
   }
 
   get calendarButton(): Locator {
     return this.page.getByRole('button', { name: 'Calendar' })
   }
 
-  get goToTodayButton(): Locator {
-    return this.page.getByRole('button', { name: 'Go to today' })
+  get noteNowButton(): Locator {
+    return this.page.getByRole('button', { name: 'Note now' })
   }
 
-  /** The toolbar itself, which sits outside the scroll container and must never move. */
-  get toolbar(): Locator {
-    return this.page.getByRole('toolbar', { name: 'Navigate' })
+  /** Inside the calendar now — `Go to today` is the notice's own button. */
+  get todayButton(): Locator {
+    return this.page.getByRole('button', { name: 'Today' })
   }
 
-  /** Comes and goes with the focus day; the toolbar's buttons never do. */
+  /** The header, which sits outside the scroll container and must never move. */
+  get header(): Locator {
+    return this.page.locator('.app__header')
+  }
+
+  /** Comes and goes with the focus day; the header's buttons never do. */
   get rolloverNotice(): Locator {
     return this.page.getByText(/^It is now /)
+  }
+
+  /** Lives inside the notice, so it exists only while the view is away from today. */
+  get goToTodayButton(): Locator {
+    return this.page.getByRole('button', { name: 'Go to today' })
   }
 
   get error(): Locator {
@@ -84,7 +112,7 @@ export class ScheduleView {
     return this.page.getByTestId('schedule-scroll')
   }
 
-  /** Only ever one dialog is open at a time — the note editor or the calendar. */
+  /** Only ever one dialog is open at a time — the note editor, the calendar, or the menu. */
   get dialog(): Locator {
     return this.page.getByRole('dialog')
   }

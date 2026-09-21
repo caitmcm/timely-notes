@@ -25,8 +25,6 @@ function renderView(overrides: Partial<React.ComponentProps<typeof ScheduleView>
     selectedOrdinal: 7,
     onSelect: vi.fn(),
     onOpenNote: vi.fn(),
-    onOpenCalendar: vi.fn(),
-    onGoToToday: vi.fn(),
     ...overrides,
   }
 
@@ -54,32 +52,13 @@ describe('ScheduleView', () => {
     expect(screen.getByTestId('schedule-scroll')).toContainElement(section(24))
   })
 
-  it('renders one navigation toolbar, above the scroll and outside it', () => {
-    const toolbar = within(renderView().container).getByRole('toolbar', { name: 'Navigate' })
+  // Navigation is the header's, above this component entirely: what is left here is the scroller.
+  it('carries no navigation of its own', () => {
+    renderView()
 
-    expect(
-      within(toolbar)
-        .getAllByRole('button')
-        .map((button) => button.textContent),
-    ).toEqual(['Calendar', 'Go to today'])
-    expect(screen.getByTestId('schedule-scroll')).not.toContainElement(toolbar)
-  })
-
-  it('opens the calendar from the toolbar', async () => {
-    const { props } = renderView()
-
-    await userEvent.click(screen.getByRole('button', { name: 'Calendar' }))
-
-    expect(props.onOpenCalendar).toHaveBeenCalledTimes(1)
-  })
-
-  // Always offered, whichever day is in view: navigation that appears and disappears is a surprise.
-  it('goes to today from the toolbar, on any day', async () => {
-    const { props } = renderView({ focusDay: day(24) })
-
-    await userEvent.click(screen.getByRole('button', { name: 'Go to today' }))
-
-    expect(props.onGoToToday).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('toolbar')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Calendar' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Go to today' })).not.toBeInTheDocument()
   })
 
   // The day sections still nudge their own selected row into view; what must not happen on mount

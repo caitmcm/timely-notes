@@ -14,19 +14,20 @@ test.beforeEach(async ({ scheduleView }) => {
   await scheduleView.open()
 })
 
-test('keeps the navigation toolbar outside the scroll and still in place at either end', async ({
+test('keeps the header outside the scroll and still in place at either end', async ({
   scheduleView,
 }) => {
-  await expect(scheduleView.toolbar.getByRole('button')).toHaveText(['Calendar', 'Go to today'])
-  await expect(scheduleView.scroller.getByRole('toolbar')).toHaveCount(0)
+  await expect(scheduleView.header.getByRole('button')).toHaveCount(3)
+  await expect(scheduleView.scroller.getByRole('button', { name: 'Calendar' })).toHaveCount(0)
 
-  const before = await scheduleView.toolbar.boundingBox()
+  const before = await scheduleView.header.boundingBox()
 
   await scheduleView.scroller.evaluate((element) => element.scrollTo(0, element.scrollHeight))
+  await expect(scheduleView.menuButton).toBeVisible()
   await expect(scheduleView.calendarButton).toBeVisible()
-  await expect(scheduleView.goToTodayButton).toBeVisible()
+  await expect(scheduleView.noteNowButton).toBeVisible()
 
-  expect(await scheduleView.toolbar.boundingBox()).toEqual(before)
+  expect(await scheduleView.header.boundingBox()).toEqual(before)
 })
 
 test('scrolls to either end without gaining a day or asking for one', async ({
@@ -143,7 +144,7 @@ test('raises the rollover notice on a jump, and drops it on Go to today', async 
   await scheduleView.calendarButton.click()
   await scheduleView.gridDay(17).click()
 
-  await expect(scheduleView.rolloverNotice).toHaveText(`It is now ${FOCUS}.`)
+  await expect(scheduleView.rolloverNotice).toContainText(`It is now ${FOCUS}.`)
 
   await scheduleView.goToTodayButton.click()
 

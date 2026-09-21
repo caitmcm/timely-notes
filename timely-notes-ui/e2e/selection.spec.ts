@@ -129,7 +129,7 @@ test('leaves a committed view where it is at midnight, and says what day it now 
 
   await page.clock.fastForward(FOUR_HOURS)
 
-  await expect(scheduleView.rolloverNotice).toHaveText(`It is now ${NEXT}.`)
+  await expect(scheduleView.rolloverNotice).toContainText(`It is now ${NEXT}.`)
   expect(await scheduleView.dayHeadings()).toEqual(['24/08/2026', FOCUS, NEXT])
   await expect(scheduleView.day(FOCUS).selectedRow).toHaveAttribute('aria-label', '06:00 – 09:00')
   // The marker follows the clock onto a day still on show; the selection stays behind.

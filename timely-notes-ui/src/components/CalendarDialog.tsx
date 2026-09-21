@@ -55,6 +55,10 @@ function CalendarDialog({
         <button type="button" onClick={() => onChangeMonth(addMonths(monthStart, 1))}>
           Next month
         </button>
+        {/* Picks, it does not page: the way back once the grid has been scrolled away from today. */}
+        <button type="button" onClick={() => onPickDay(currentDay)}>
+          Today
+        </button>
       </div>
 
       {error && (

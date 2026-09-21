@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { deleteNote, saveNote } from './api/notesApi'
 import { addDays, dayKeyOf, eachDay } from './domain/days'
 import { monthGrid, monthStartOf } from './domain/months'
@@ -12,10 +12,11 @@ import { DEFAULT_SCHEDULE, SCHEDULES } from './domain/schedules'
 import { useNow } from './hooks/useNow'
 import { useNoteDays } from './hooks/useNoteDays'
 import { useScheduleNotes } from './hooks/useScheduleNotes'
-import SchedulePicker from './components/SchedulePicker'
+import MenuDrawer from './components/MenuDrawer'
 import ScheduleView from './components/ScheduleView'
 import CalendarDialog from './components/CalendarDialog'
 import NoteDialog, { type NoteSlot } from './components/NoteDialog'
+import { CalendarIcon, MenuIcon, NoteNowIcon } from './components/icons'
 import type { DayKey, Period, Schedule, ScheduleShortName } from './types'
 import './App.css'
 
@@ -63,7 +64,10 @@ function App({ now: nowProp }: AppProps) {
   const selectedOrdinal = pinned?.ordinal ?? ordinalOf(now, schedule.spanHours)
 
   const [dialogSlot, setDialogSlot] = useState<NoteSlot | null>(null)
+  const [isNoteNowPending, setIsNoteNowPending] = useState(false)
 
+  const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const menuButtonRef = useRef<HTMLButtonElement>(null)
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   const [calendarMonth, setCalendarMonth] = useState(() => monthStartOf(focusDay))
   const weeks = useMemo(() => monthGrid(calendarMonth), [calendarMonth])
@@ -87,7 +91,53 @@ function App({ now: nowProp }: AppProps) {
 
   const awayFromToday = focusDay !== currentDay
 
+  // The one path `Note now` takes. It reads the period out of `days` by `selectedOrdinal`, which
+  // with `pinned` null *is* the current period — so nothing here touches `now` and no tick refetches.
+  // Derivation cannot replace it: a derived slot would follow the clock over an open dialog.
+  useEffect(() => {
+    if (!isNoteNowPending) {
+      return
+    }
+
+    if (error) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- see the comment above
+      setIsNoteNowPending(false)
+
+      return
+    }
+
+    const today = days.find((day) => day.day === currentDay)
+
+    if (!today || today.isLoading) {
+      return
+    }
+
+    const period = today.periods.find((candidate) => candidate.ordinal === selectedOrdinal)
+
+    if (!period) {
+      return
+    }
+
+    setIsNoteNowPending(false)
+    setDialogSlot({ day: currentDay, period })
+  }, [isNoteNowPending, error, days, currentDay, selectedOrdinal])
+
+  // The drawer unmounts rather than closing, so `<dialog>`'s own focus restore never runs. After the
+  // commit, not in the handler: on Escape the browser's close sequence would otherwise land last.
+  const wasMenuOpen = useRef(false)
+
+  useEffect(() => {
+    if (wasMenuOpen.current && !isMenuOpen) {
+      menuButtonRef.current?.focus()
+    }
+
+    wasMenuOpen.current = isMenuOpen
+  }, [isMenuOpen])
+
   const handleScheduleChange = (shortName: ScheduleShortName) => {
+    // One tap in, one tap done: the close is on the press, whether or not the Schedule moves.
+    setIsMenuOpen(false)
+
     const next = SCHEDULES.find((candidate) => candidate.shortName === shortName)
 
     if (!next || next.shortName === schedule.shortName) {
@@ -109,6 +159,12 @@ function App({ now: nowProp }: AppProps) {
     setPinned({ day, ordinal: period.ordinal })
 
   const goToToday = () => setPinned(null)
+
+  /** Un-pins and asks for the open; the effect below is what performs it, once the day is there. */
+  const handleNoteNow = () => {
+    setPinned(null)
+    setIsNoteNowPending(true)
+  }
 
   const openCalendar = () => {
     setCalendarMonth(monthStartOf(focusDay))
@@ -147,8 +203,43 @@ function App({ now: nowProp }: AppProps) {
   return (
     <div className="app">
       <header className="app__header">
+        <button
+          type="button"
+          className="app__header-button"
+          aria-label="Menu"
+          title="Menu"
+          aria-haspopup="dialog"
+          aria-expanded={isMenuOpen}
+          ref={menuButtonRef}
+          onClick={() => setIsMenuOpen(true)}
+        >
+          <MenuIcon />
+        </button>
+
         <h1 className="app__title">Timely Notes</h1>
-        <SchedulePicker selected={schedule.shortName} onChange={handleScheduleChange} />
+
+        <div className="app__header-actions">
+          <button
+            type="button"
+            className="app__header-button"
+            aria-label="Calendar"
+            title="Calendar"
+            aria-haspopup="dialog"
+            onClick={openCalendar}
+          >
+            <CalendarIcon />
+          </button>
+          <button
+            type="button"
+            className="app__header-button app__header-button--primary"
+            aria-label="Note now"
+            title="Note now"
+            aria-haspopup="dialog"
+            onClick={handleNoteNow}
+          >
+            <NoteNowIcon />
+          </button>
+        </div>
       </header>
 
       {error && (
@@ -157,10 +248,14 @@ function App({ now: nowProp }: AppProps) {
         </p>
       )}
 
-      {/* Go to today lives in the toolbar, always; this only says why it is worth pressing. */}
+      {/* The region announces the rollover; the button inside it is the way back. A button alone
+          is never announced, so the two jobs stay separate. */}
       {awayFromToday && (
         <p className="app__status" role="status">
-          It is now {formatDayHeading(currentDay)}.
+          It is now {formatDayHeading(currentDay)}.{' '}
+          <button type="button" className="app__status-action" onClick={goToToday}>
+            Go to today
+          </button>
         </p>
       )}
 
@@ -172,8 +267,13 @@ function App({ now: nowProp }: AppProps) {
         selectedOrdinal={selectedOrdinal}
         onSelect={handleSelect}
         onOpenNote={handleOpenNote}
-        onOpenCalendar={openCalendar}
-        onGoToToday={goToToday}
+      />
+
+      <MenuDrawer
+        isOpen={isMenuOpen}
+        selected={schedule.shortName}
+        onChangeSchedule={handleScheduleChange}
+        onClose={() => setIsMenuOpen(false)}
       />
 
       <CalendarDialog

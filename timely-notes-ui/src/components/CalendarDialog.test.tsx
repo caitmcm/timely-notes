@@ -84,6 +84,24 @@ describe('CalendarDialog', () => {
     expect(onClose).toHaveBeenCalled()
   })
 
+  it('picks the current day from Today, by the same route as its cell', async () => {
+    const { onPickDay } = renderDialog()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Today' }))
+
+    expect(onPickDay).toHaveBeenCalledWith('2026-09-17')
+  })
+
+  // The way back when the grid has been paged away and today's cell is nowhere on it.
+  it('picks the current day from Today while another month is shown', async () => {
+    const march = monthStartOf(day('2026-03-01'))
+    const { onPickDay } = renderDialog({ monthStart: march, weeks: monthGrid(march) })
+
+    await userEvent.click(screen.getByRole('button', { name: 'Today' }))
+
+    expect(onPickDay).toHaveBeenCalledWith('2026-09-17')
+  })
+
   it('passes a picked day straight through', async () => {
     const { onPickDay } = renderDialog()
 

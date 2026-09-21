@@ -114,10 +114,19 @@ const row = (dayOfMonth: number, name: string) =>
 
 const headings = () => screen.getAllByRole('listbox').map((list) => list.getAttribute('aria-label'))
 
-/** The rollover notice, which comes and goes — unlike the toolbar's Go to today, which never does. */
+/** The rollover notice, which comes and goes — and carries the one-tap way back with it. */
 const rolloverNotice = () => screen.queryByText(/^It is now /)
 
+/** Lives inside the notice, so it exists only while the view is away from today. */
 const goToToday = () => screen.getByRole('button', { name: 'Go to today' })
+
+/** The Schedule is behind the drawer now: every switch opens it first. */
+const openMenu = async () => userEvent.click(screen.getByRole('button', { name: 'Menu' }))
+
+const chooseSchedule = async (label: string) => {
+  await openMenu()
+  await userEvent.click(screen.getByRole('button', { name: label }))
+}
 
 describe('App', () => {
   afterEach(() => {
@@ -130,6 +139,7 @@ describe('App', () => {
     renderApp()
 
     await waitFor(() => expect(requestedShortNames(fetchMock)).toContain('s3'))
+    await openMenu()
     expect(screen.getByRole('button', { name: '3h', pressed: true })).toBeInTheDocument()
   })
 
@@ -148,7 +158,7 @@ describe('App', () => {
     renderApp()
     await screen.findByText(/Afternoon block/)
 
-    await userEvent.click(screen.getByRole('button', { name: '6h' }))
+    await chooseSchedule('6h')
 
     await waitFor(() => expect(requestedShortNames(fetchMock)).toEqual(['s3', 's6']))
   })
@@ -168,7 +178,7 @@ describe('App', () => {
     renderApp()
     await screen.findByText(/Afternoon block/)
 
-    await userEvent.click(screen.getByRole('button', { name: '6h' }))
+    await chooseSchedule('6h')
 
     await waitFor(() => expect(requestedShortNames(fetchMock)).toContain('s6'))
     expect(screen.getAllByRole('option')).toHaveLength(12)
@@ -355,7 +365,7 @@ describe('App', () => {
     renderApp()
     await screen.findByRole('option', { selected: true })
 
-    await userEvent.click(screen.getByRole('button', { name: '1h' }))
+    await chooseSchedule('1h')
 
     await waitFor(() =>
       expect(screen.getByRole('option', { selected: true })).toHaveAccessibleName('20:00 – 21:00'),
@@ -529,15 +539,25 @@ describe('App — live clock', () => {
     expect(requests(fetchMock)).toHaveLength(2)
   })
 
-  it('leaves the view alone when Go to today is pressed on the current day', async () => {
-    const fetchMock = await mountAt(onThe25th(20, 20))
+  // The way back is the notice, and the notice is only there when there is somewhere to come back
+  // from. On today it is not a disabled control — it is no control at all.
+  it('offers no way back while the view is already on today', async () => {
+    await mountAt(onThe25th(20, 20))
 
-    await click(goToToday())
-    await act(async () => {})
+    expect(rolloverNotice()).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Go to today' })).not.toBeInTheDocument()
+  })
 
-    expect(headings()).toEqual(['24/08/2026', '25/08/2026', '26/08/2026'])
-    expect(selectedName()).toBe('18:00 – 21:00')
-    expect(requests(fetchMock)).toHaveLength(1)
+  it('carries the way back inside the status region, so the rollover is still announced', async () => {
+    await mountAt(onThe25th(23, 59))
+    await click(row(25, '06:00 – 09:00'))
+
+    await advance(2 * 60_000)
+
+    const notice = screen.getByRole('status')
+
+    expect(notice).toHaveTextContent('26/08/2026')
+    expect(within(notice).getByRole('button', { name: 'Go to today' })).toBeInTheDocument()
   })
 
   it('addresses a new note by the day that is current when the dialog opens', async () => {
@@ -686,17 +706,37 @@ describe('App — calendar navigation', () => {
     expect(screen.queryByText('July 2026')).not.toBeInTheDocument()
   })
 
-  it('offers Go to today in the toolbar wherever the view is', async () => {
+  it('offers the way back once the calendar has sent the view elsewhere', async () => {
     stubApi()
     renderApp()
     await screen.findByRole('option', { selected: true })
-    expect(goToToday()).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Go to today' })).not.toBeInTheDocument()
 
     await openCalendar()
     await userEvent.click(screen.getByRole('button', { name: 'Previous month' }))
     await userEvent.click(screen.getByRole('button', { name: '15' }))
 
-    expect(goToToday()).toBeInTheDocument()
+    await userEvent.click(goToToday())
+
+    expect(headings()).toEqual(['24/08/2026', '25/08/2026', '26/08/2026'])
+    expect(rolloverNotice()).not.toBeInTheDocument()
+  })
+
+  // Reached from a month the grid was paged to, where today's cell is nowhere on screen.
+  it('comes back to today from the calendar Today button', async () => {
+    stubApi()
+    renderApp()
+    await screen.findByRole('option', { selected: true })
+    await openCalendar()
+    await userEvent.click(screen.getByRole('button', { name: 'Previous month' }))
+    await userEvent.click(screen.getByRole('button', { name: '15' }))
+
+    await openCalendar()
+    await userEvent.click(screen.getByRole('button', { name: 'Today' }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(headings()).toEqual(['24/08/2026', '25/08/2026', '26/08/2026'])
+    expect(rolloverNotice()).not.toBeInTheDocument()
   })
 
   it('picking the current day is Go to today', async () => {
@@ -746,14 +786,19 @@ describe('App — calendar navigation', () => {
     ])
   })
 
-  it('keeps the calendar open across a schedule change and re-asks for the counts', async () => {
+  // The picker is behind its own modal now, so a schedule change with the calendar open is not a
+  // journey that exists. What is still worth holding is that reopening it re-asks under the new
+  // short name rather than showing the old schedule's markers.
+  it('re-asks for the counts under the new short name', async () => {
     const fetchMock = stubApi()
     renderApp()
     await screen.findByRole('option', { selected: true })
     await openCalendar()
     await waitFor(() => expect(countRequests(fetchMock)).toHaveLength(1))
+    await userEvent.click(screen.getByRole('button', { name: 'Close' }))
 
-    await userEvent.click(screen.getByRole('button', { name: '6h' }))
+    await chooseSchedule('6h')
+    await openCalendar()
 
     expect(screen.getByText('August 2026')).toBeInTheDocument()
     await waitFor(() =>
@@ -820,5 +865,230 @@ describe('App — calendar navigation', () => {
     const selected = screen.getAllByRole('option', { selected: true })
     expect(selected).toHaveLength(1)
     expect(section(august(26))).toContainElement(selected[0])
+  })
+})
+
+describe('App — the header', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  const headerButton = (name: string) => screen.getByRole('button', { name })
+
+  it('offers Menu, Calendar and Note now, and no Schedule in the open', async () => {
+    stubFetch()
+    renderApp()
+    await screen.findByRole('option', { selected: true })
+
+    expect(headerButton('Menu')).toBeInTheDocument()
+    expect(headerButton('Calendar')).toBeInTheDocument()
+    expect(headerButton('Note now')).toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Schedule' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '3h' })).not.toBeInTheDocument()
+  })
+
+  // Icons carry no words: the tooltip is the only name a sighted user can reach for.
+  it('names each icon button twice, for the tooltip and for assistive technology', async () => {
+    stubFetch()
+    renderApp()
+    await screen.findByRole('option', { selected: true })
+
+    for (const name of ['Menu', 'Calendar', 'Note now']) {
+      expect(headerButton(name)).toHaveAttribute('title', name)
+    }
+  })
+
+  it('reveals the Schedule behind Menu, and says so on the button', async () => {
+    stubFetch()
+    renderApp()
+    await screen.findByRole('option', { selected: true })
+
+    expect(headerButton('Menu')).toHaveAttribute('aria-expanded', 'false')
+
+    await openMenu()
+
+    expect(headerButton('Menu')).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('group', { name: 'Schedule' })).toBeInTheDocument()
+  })
+
+  it('opens the calendar from the header', async () => {
+    stubFetch()
+    renderApp()
+    await screen.findByRole('option', { selected: true })
+
+    await userEvent.click(headerButton('Calendar'))
+
+    expect(screen.getByText('August 2026')).toBeInTheDocument()
+  })
+
+  it('re-chunks the days and closes the drawer on a Schedule press', async () => {
+    stubFetch({ s3: s3Notes, s6: [] })
+    renderApp()
+    await screen.findByText(/Afternoon block/)
+
+    await chooseSchedule('6h')
+
+    await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(12))
+    expect(screen.queryByRole('group', { name: 'Schedule' })).not.toBeInTheDocument()
+    expect(headerButton('Menu')).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  // One tap in, one tap done — the press closes it, not the change it may or may not cause.
+  it('closes the drawer on a press of the Schedule already chosen', async () => {
+    const fetchMock = stubFetch()
+    renderApp()
+    await screen.findByText(/Afternoon block/)
+
+    await chooseSchedule('3h')
+
+    expect(screen.queryByRole('group', { name: 'Schedule' })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('option')).toHaveLength(24)
+    expect(requests(fetchMock)).toHaveLength(1)
+  })
+
+  it('leaves the Schedule alone when the drawer is closed instead', async () => {
+    stubFetch()
+    renderApp()
+    await screen.findByText(/Afternoon block/)
+
+    await openMenu()
+    await userEvent.click(screen.getByRole('button', { name: 'Close' }))
+
+    expect(screen.queryByRole('group', { name: 'Schedule' })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('option')).toHaveLength(24)
+  })
+})
+
+describe('App — Note now', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  /** p7 of `s3` is 18:00 – 21:00, the period the frozen clock sits in. */
+  const nowNote = wireNote(august(25), 7, 'Evening block: the period the clock is in.')
+
+  const noteNow = async () => userEvent.click(screen.getByRole('button', { name: 'Note now' }))
+
+  it('opens the current period, with that period’s own note', async () => {
+    stubFetch({ s3: [nowNote, ...s3Notes] })
+    renderApp()
+    await screen.findByText(/Evening block/)
+
+    await noteNow()
+
+    expect(screen.getByRole('heading', { name: '18:00 – 21:00' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox')).toHaveValue('Evening block: the period the clock is in.')
+  })
+
+  // The content is the assertion, not the heading: an off-by-one lands on the wrong note, and a
+  // wrong-period heading with the right text would still be a bug that reads as a pass.
+  it('opens the current period even while another row is selected', async () => {
+    stubFetch({ s3: [nowNote, ...s3Notes] })
+    renderApp()
+    await screen.findByText(/Evening block/)
+    await userEvent.click(row(25, '09:00 – 12:00'))
+
+    await noteNow()
+
+    expect(screen.getByRole('textbox')).toHaveValue('Evening block: the period the clock is in.')
+  })
+
+  it('brings the view back to today before opening, from a day jumped to', async () => {
+    stubFetch({ s3: [nowNote, ...s3Notes] })
+    renderApp()
+    await screen.findByText(/Evening block/)
+    await userEvent.click(screen.getByRole('button', { name: 'Calendar' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Previous month' }))
+    await userEvent.click(screen.getByRole('button', { name: '15' }))
+    expect(rolloverNotice()).toBeInTheDocument()
+
+    await noteNow()
+
+    expect(headings()).toEqual(['24/08/2026', '25/08/2026', '26/08/2026'])
+    expect(rolloverNotice()).not.toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.getByRole('textbox')).toHaveValue('Evening block: the period the clock is in.'),
+    )
+  })
+
+  // Opening over an unloaded day would put a blank editor above a note that has not arrived — and
+  // the first autosave would write the blank over it.
+  it('waits for the day rather than opening on an unloaded one', async () => {
+    let land: (notes: unknown[]) => void = () => {}
+    const pending = new Promise<unknown[]>((resolve) => {
+      land = resolve
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, status: 200, json: async () => pending }) as Response),
+    )
+    renderApp()
+
+    await noteNow()
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    await act(async () => {
+      land([nowNote])
+    })
+
+    expect(screen.getByRole('heading', { name: '18:00 – 21:00' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox')).toHaveValue('Evening block: the period the clock is in.')
+  })
+
+  it('abandons the open when the window request fails', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) } as Response),
+    )
+    renderApp()
+    await screen.findByRole('alert')
+
+    await noteNow()
+    await act(async () => {})
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('leaves the view following the clock after the dialog is cancelled', async () => {
+    stubFetch({ s3: [nowNote, ...s3Notes] })
+    renderApp()
+    await screen.findByText(/Evening block/)
+    await userEvent.click(row(25, '09:00 – 12:00'))
+
+    await noteNow()
+    await userEvent.click(screen.getByRole('button', { name: 'Done' }))
+
+    // Un-pinned: the selection is the current period by derivation, not by a stored ordinal.
+    expect(screen.getByRole('option', { selected: true })).toHaveAccessibleName('18:00 – 21:00')
+    expect(rolloverNotice()).not.toBeInTheDocument()
+  })
+})
+
+describe('App — the menu returns focus', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  // The drawer unmounts rather than closing, so the browser's own focus restore never runs.
+  it('puts focus back on Menu when the drawer closes', async () => {
+    stubFetch()
+    renderApp()
+    await screen.findByRole('option', { selected: true })
+
+    await openMenu()
+    await userEvent.click(screen.getByRole('button', { name: 'Close' }))
+
+    expect(screen.getByRole('button', { name: 'Menu' })).toHaveFocus()
+  })
+
+  it('puts focus back on Menu when a Schedule closes the drawer', async () => {
+    stubFetch({ s3: s3Notes, s6: [] })
+    renderApp()
+    await screen.findByRole('option', { selected: true })
+
+    await chooseSchedule('6h')
+
+    expect(screen.getByRole('button', { name: 'Menu' })).toHaveFocus()
   })
 })

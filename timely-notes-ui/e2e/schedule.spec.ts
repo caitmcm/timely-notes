@@ -11,16 +11,21 @@ test('presses only the schedule chosen, and re-chunks every day', async ({
   page,
   scheduleView,
 }) => {
+  await scheduleView.openMenu()
   await scheduleView.schedule('6h').click()
 
+  // The press closes the drawer, so reading the pressed state means opening it again.
+  await scheduleView.openMenu()
   await expect(scheduleView.schedule('6h')).toHaveAttribute('aria-pressed', 'true')
   await expect(scheduleView.schedule('3h')).toHaveAttribute('aria-pressed', 'false')
+  await scheduleView.closeMenu()
 
   for (const heading of DAYS) {
     await expect(scheduleView.day(heading).rows).toHaveCount(4)
   }
   await expect(page.getByRole('option')).toHaveCount(12)
 
+  await scheduleView.openMenu()
   await scheduleView.schedule('1h').click()
 
   for (const heading of DAYS) {
@@ -32,6 +37,7 @@ test('presses only the schedule chosen, and re-chunks every day', async ({
 test('asks for the new short name once, not once per render', async ({ api, scheduleView }) => {
   expect(api.notesWindows).toEqual(['s3 2026-08-24 2026-08-27'])
 
+  await scheduleView.openMenu()
   await scheduleView.schedule('6h').click()
   await expect(scheduleView.day(FOCUS).rows).toHaveCount(4)
 
@@ -46,30 +52,33 @@ test('re-anchors a pinned selection onto the current period of the new schedule'
 }) => {
   await scheduleView.day(FOCUS).row('06:00 – 09:00').click()
 
+  await scheduleView.openMenu()
   await scheduleView.schedule('1h').click()
 
   await expect(scheduleView.day(FOCUS).selectedRow).toHaveAttribute('aria-label', '20:00 – 21:00')
 })
 
 /**
- * The picker cannot be reached while a dialog is open: a modal `<dialog>` swallows the click. This
- * is why `handleScheduleChange` carries no close-the-dialog guard — there is no way to reach it.
+ * The menu cannot be reached while another dialog is open: a modal `<dialog>` swallows the click.
+ * This is why `App` carries no close-the-other-dialog guard — there is no way to reach it.
  */
-test('cannot change schedule while a dialog is open — the picker is behind it', async ({
+test('cannot open the menu while a dialog is open — the button is behind it', async ({
   scheduleView,
 }) => {
   await scheduleView.day(FOCUS).noteButton.click()
   await expect(scheduleView.dialog).toBeVisible()
 
-  await expect(scheduleView.schedule('6h').click({ timeout: 2000 })).rejects.toThrow(
+  await expect(scheduleView.menuButton.click({ timeout: 2000 })).rejects.toThrow(
     /intercepts pointer events/,
   )
 
   await expect(scheduleView.dialog).toBeVisible()
-  await expect(scheduleView.schedule('3h')).toHaveAttribute('aria-pressed', 'true')
+  await expect(scheduleView.menu).toHaveCount(0)
+  await expect(scheduleView.day(FOCUS).rows).toHaveCount(8)
 })
 
 test('brings the new schedule’s own notes with it', async ({ scheduleView }) => {
+  await scheduleView.openMenu()
   await scheduleView.schedule('6h').click()
 
   await expect(scheduleView.day(FOCUS).noteText('Six-hourly: the long block.')).toBeVisible()

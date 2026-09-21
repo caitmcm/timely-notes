@@ -48,9 +48,13 @@ test.describe('@integrated', () => {
       'Afternoon block: wired up FastEndpoints.',
     )
 
+    await scheduleView.openMenu()
+
     await scheduleView.schedule('1h').click()
     await expect(day.row('09:00 – 10:00')).toContainText('Stand-up')
     await expect(day.row('14:00 – 15:00')).toContainText('Afternoon')
+
+    await scheduleView.openMenu()
 
     await scheduleView.schedule('6h').click()
     await expect(day.row('06:00 – 12:00')).toContainText('First half of the day, in one go.')

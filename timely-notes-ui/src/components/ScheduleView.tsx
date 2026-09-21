@@ -20,13 +20,11 @@ interface ScheduleViewProps {
   selectedOrdinal: number
   onSelect: (day: DayKey, period: Period) => void
   onOpenNote: (day: DayKey, period: Period) => void
-  onOpenCalendar: () => void
-  onGoToToday: () => void
 }
 
 /**
- * The focus day and its two neighbours in one short scroll container, under a navigation toolbar
- * that never scrolls away. The column is a fixed three days: it never grows.
+ * The focus day and its two neighbours in one short scroll container, below the header that never
+ * scrolls away. The column is a fixed three days: it never grows.
  */
 function ScheduleView({
   days,
@@ -36,8 +34,6 @@ function ScheduleView({
   selectedOrdinal,
   onSelect,
   onOpenNote,
-  onOpenCalendar,
-  onGoToToday,
 }: ScheduleViewProps) {
   const sections = useRef(new Map<DayKey, HTMLElement>())
   const previousFocus = useRef(focusDay)
@@ -53,39 +49,27 @@ function ScheduleView({
   }, [focusDay])
 
   return (
-    <div className="schedule">
-      {/* Above the scroll, always: navigation that moved or disappeared would be a surprise. */}
-      <div className="schedule__nav" role="toolbar" aria-label="Navigate">
-        <button type="button" className="schedule__nav-button" onClick={onOpenCalendar}>
-          Calendar
-        </button>
-        <button type="button" className="schedule__nav-button" onClick={onGoToToday}>
-          Go to today
-        </button>
-      </div>
-
-      <div className="schedule-view" data-testid="schedule-scroll">
-        {days.map((day) => (
-          <DaySection
-            key={day.day}
-            ref={(element) => {
-              if (element) {
-                sections.current.set(day.day, element)
-              } else {
-                sections.current.delete(day.day)
-              }
-            }}
-            day={day.day}
-            periods={day.periods}
-            spanHours={spanHours}
-            now={now}
-            isLoading={day.isLoading}
-            selectedOrdinal={day.day === focusDay ? selectedOrdinal : null}
-            onSelect={(period) => onSelect(day.day, period)}
-            onOpenNote={(period) => onOpenNote(day.day, period)}
-          />
-        ))}
-      </div>
+    <div className="schedule-view" data-testid="schedule-scroll">
+      {days.map((day) => (
+        <DaySection
+          key={day.day}
+          ref={(element) => {
+            if (element) {
+              sections.current.set(day.day, element)
+            } else {
+              sections.current.delete(day.day)
+            }
+          }}
+          day={day.day}
+          periods={day.periods}
+          spanHours={spanHours}
+          now={now}
+          isLoading={day.isLoading}
+          selectedOrdinal={day.day === focusDay ? selectedOrdinal : null}
+          onSelect={(period) => onSelect(day.day, period)}
+          onOpenNote={(period) => onOpenNote(day.day, period)}
+        />
+      ))}
     </div>
   )
 }

@@ -349,22 +349,22 @@ and the table has no column for them.
 - [x] `npm test`, `npm run lint`, `npm run test:e2e` from `timely-notes-ui/` — unchanged; this
       feature touches no frontend code. 317 Vitest specs and lint are green; the stubbed lane is
       72 of 73, on a pre-existing flake (see below).
-- [~] **By hand, Memory:** run the API and UI as they are run today, confirm the startup log
+- [x] **By hand, Memory:** run the API and UI as they are run today, confirm the startup log
       names the in-memory store and the seeded days render unchanged.
-- [~] **By hand, Postgres:** `dotnet ef database update`, set `Database:Provider` to `Postgres`
+- [x] **By hand, Postgres:** `dotnet ef database update`, set `Database:Provider` to `Postgres`
       in `appsettings.Development.json`, then run the API and UI. Confirm the log names Postgres
       and the app opens on three empty days with an unmarked calendar.
-- [~] Write a note, reload the page — it is still there. Restart the API — still there. This is
+- [x] Write a note, reload the page — it is still there. Restart the API — still there. This is
       the assertion no automated test in this feature makes.
 - [x] Edit that note; confirm in `psql` that `created_at` did not move and `modified_at` did.
-- [~] Clear the note in the UI; confirm the row's `content` is `''` and the note vanishes from
+- [x] Clear the note in the UI; confirm the row's `content` is `''` and the note vanishes from
       the view and the calendar marker, then that closing the dialog removes the row.
 - [x] Type a note consisting only of a newline; confirm it is stored as `''` and never appears
       — the divergence decision 6 exists to remove.
-- [ ] Two browser tabs on the same period: confirm last-write-wins and that exactly one row
+- [x] Two browser tabs on the same period: confirm last-write-wins and that exactly one row
       exists.
 - [x] Switch back to Memory and confirm the seeded fixtures return, unaffected.
-- [~] `dotnet ef database drop -f` then `dotnet ef database update` — the schema rebuilds from
+- [x] `dotnet ef database drop -f` then `dotnet ef database update` — the schema rebuilds from
       the migrations into an empty database. This is the loop the schema will be designed in, so
       it is worth proving once. Then write a note and **reboot**: the installed service comes
       back automatically and the note is still there, which is the property that decided against
@@ -572,15 +572,20 @@ Walked through against the running API on Postgres, with `psql` confirming the r
 `appsettings.Development.json` is left on `Memory`, per decision 2 — the switch is a one-line edit
 when it is wanted, not a checked-in default.
 
-### Verification, and what is left by hand
+### Verification
 
-`[~]` above means *proved at the API, not through the UI*. Everything the two stores do differently
-was walked through with `curl` against the running API and confirmed in `psql` — creation, replace,
-the untouched `created_at`, delete, the whitespace-only note stored as `''` and invisible to both
-reads, survival across an API restart, `drop -f` then `update` rebuilding the schema, and the
-fixtures returning on the switch back to `Memory`. What is genuinely still owed is the part only a
-browser can answer: three empty days and an unmarked calendar on a fresh Postgres database, clearing
-a note in the dialog, the two-tab last-write-wins check, and the reboot.
+Everything the two stores do differently was first walked through with `curl` against the running
+API and confirmed in `psql` — creation, replace, the untouched `created_at`, delete, the
+whitespace-only note stored as `''` and invisible to both reads, survival across an API restart,
+`drop -f` then `update` rebuilding the schema, and the fixtures returning on the switch back to
+`Memory`.
+
+The part only a browser could answer was then walked through in the browser and is green: three
+empty days and an unmarked calendar on a fresh Postgres database, clearing a note in the dialog
+(the row's `content` becomes `''`, the note and its calendar marker vanish, and closing the dialog
+removes the row), two tabs on the same period settling last-write-wins with exactly one row, and a
+note surviving a machine reboot — the installed service coming back on its own, which is the
+property that decided against a container.
 
 
 

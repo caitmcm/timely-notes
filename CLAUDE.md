@@ -148,6 +148,5 @@ in `integrated`, which holds only the assertions about the two projects agreeing
 small. `NoteEditor` is mocked in `App.test.tsx` and `NoteDialog.test.tsx`: MDXEditor emits no
 change event under jsdom, so its real behaviour is the Playwright lane's job.
 
-**Next.** `LocalPostgres.MD` is built and still in `todo/`, waiting only on the browser half of its
-by-hand walk-through. The rest of `feature-docs/todo/` is specified and unstarted; each doc's Goal
-says what it is for, and `EmptyNotePruning.MD` is **not scheduled**.
+**Next.** `feature-docs/todo/` is specified and unstarted; each doc's Goal says what it is for, and
+`EmptyNotePruning.MD` is **not scheduled**.

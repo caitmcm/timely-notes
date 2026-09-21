@@ -31,6 +31,16 @@ test('closes on Escape, handing focus back to the Menu button', async ({ page, s
   await expect(scheduleView.menuButton).toHaveAttribute('aria-expanded', 'false')
 })
 
+test('closes on a press outside the drawer', async ({ page, scheduleView }) => {
+  await scheduleView.openMenu()
+
+  // Far to the right of an 18rem drawer: the backdrop, not the schedule behind it.
+  await page.mouse.click(900, 400)
+
+  await expect(scheduleView.menu).toHaveCount(0)
+  await expect(scheduleView.menuButton).toBeFocused()
+})
+
 test('closes on a Schedule press, revealing the re-chunked day behind it', async ({
   scheduleView,
 }) => {

@@ -384,3 +384,16 @@ flex child that grows, which is what keeps the header fixed.
 
 **Verified in a browser**, not only in the lanes: header, drawer, calendar with `Today`, and
 `Note now` opening `18:00 – 21:00` with its note already in the editor.
+
+## Change request — dismissing the drawer (2026-09-21)
+
+**The drawer light-dismisses.** A press outside it closes it. The dialog element *is* the backdrop,
+so the padding moved off it onto a `.menu-drawer__panel` inside; a click whose `target` is the
+dialog itself therefore came from outside the drawer. Without that move a press on the dialog's own
+padding — visibly inside the panel — would close it too. `closedby="any"` was not used: jsdom does
+not implement it, so the behaviour would have had no unit test.
+
+**`Close` is an × at the top-right.** It sits in a `.menu-drawer__header` flex row beside the
+`Menu` heading, an icon button named by `aria-label` and `title` like the three in the app header,
+using a new `CloseIcon`. `.menu-drawer__actions` and its rule are gone. The accessible name is
+still `Close`, so the page object and every existing test reach it unchanged.

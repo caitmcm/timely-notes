@@ -50,13 +50,34 @@ describe('MenuDrawer', () => {
     expect(onChangeSchedule).toHaveBeenCalledWith('s6')
   })
 
-  it('closes on the Close button', async () => {
+  it('closes on the Close button, which sits beside the heading', async () => {
     const user = userEvent.setup()
     const { onClose } = renderDrawer()
 
-    await user.click(screen.getByRole('button', { name: 'Close' }))
+    const close = screen.getByRole('button', { name: 'Close' })
+
+    expect(close.closest('.menu-drawer__header')).not.toBeNull()
+
+    await user.click(close)
 
     expect(onClose).toHaveBeenCalled()
+  })
+
+  it('closes on a press outside the panel, which lands on the dialog itself', () => {
+    const { onClose } = renderDrawer()
+
+    fireEvent.click(screen.getByRole('dialog'))
+
+    expect(onClose).toHaveBeenCalled()
+  })
+
+  it('stays open on a press inside the panel', async () => {
+    const user = userEvent.setup()
+    const { onClose } = renderDrawer()
+
+    await user.click(screen.getByRole('heading', { name: 'Menu' }))
+
+    expect(onClose).not.toHaveBeenCalled()
   })
 
   it('closes on Escape, which the browser turns into a cancel event', () => {

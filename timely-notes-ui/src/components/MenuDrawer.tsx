@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import SchedulePicker from './SchedulePicker'
+import { CloseIcon } from './icons'
 import type { ScheduleShortName } from '../types'
 
 interface MenuDrawerProps {
@@ -12,6 +13,9 @@ interface MenuDrawerProps {
 /**
  * Settings, modal over the schedule and anchored to the left edge. A drawer in appearance, a dialog
  * in mechanism. It decides nothing — every press goes to `App`.
+ *
+ * The dialog element is the backdrop; the panel inside it holds the padding, so a click that lands
+ * on the dialog itself came from outside the drawer.
  */
 function MenuDrawer({ isOpen, selected, onChangeSchedule, onClose }: MenuDrawerProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
@@ -27,15 +31,28 @@ function MenuDrawer({ isOpen, selected, onChangeSchedule, onClose }: MenuDrawerP
   }
 
   return (
-    <dialog ref={dialogRef} className="menu-drawer" onCancel={onClose} onClose={onClose}>
-      <h2 className="menu-drawer__title">Menu</h2>
+    <dialog
+      ref={dialogRef}
+      className="menu-drawer"
+      onCancel={onClose}
+      onClose={onClose}
+      onClick={(event) => event.target === dialogRef.current && onClose()}
+    >
+      <div className="menu-drawer__panel">
+        <div className="menu-drawer__header">
+          <h2 className="menu-drawer__title">Menu</h2>
+          <button
+            type="button"
+            className="menu-drawer__close"
+            aria-label="Close"
+            title="Close"
+            onClick={onClose}
+          >
+            <CloseIcon />
+          </button>
+        </div>
 
-      <SchedulePicker selected={selected} onChange={onChangeSchedule} />
-
-      <div className="menu-drawer__actions">
-        <button type="button" onClick={onClose}>
-          Close
-        </button>
+        <SchedulePicker selected={selected} onChange={onChangeSchedule} />
       </div>
     </dialog>
   )

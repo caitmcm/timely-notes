@@ -1,6 +1,6 @@
 /**
- * The header's three glyphs. Decorative by construction — the button carries the name, in both an
- * `aria-label` and a `title`, so the SVG is hidden from assistive technology.
+ * The header's glyphs, and the drawer's. Decorative by construction — the button carries the name,
+ * in both an `aria-label` and a `title`, so the SVG is hidden from assistive technology.
  */
 
 const glyph = {
@@ -36,5 +36,12 @@ export const NoteNowIcon = () => (
   <svg {...glyph}>
     <path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4Z" />
     <line x1="14" y1="6" x2="18" y2="10" />
+  </svg>
+)
+
+export const CloseIcon = () => (
+  <svg {...glyph}>
+    <line x1="6" y1="6" x2="18" y2="18" />
+    <line x1="18" y1="6" x2="6" y2="18" />
   </svg>
 )

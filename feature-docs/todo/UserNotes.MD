@@ -152,6 +152,11 @@ Following TDD (per `CLAUDE.md`): a failing test before each piece of code, in bo
       `sessionStorage` is open to XSS, but XSS already owns the page and everything in it.
     - **The `audience` parameter must be sent on the authorize request.** Without it Auth0
       issues an opaque access token and every API call is `401`. It goes in `extraQueryParams`.
+    - **Scopes are `openid email offline_access`.** `email` is for *Signed in as*. There is no
+      `profile`, since nothing shows a name (decision 4).
+    - **Sign out is RP-initiated logout**, returning to the app's origin, which must be in
+      Auth0's Allowed Logout URLs. Clearing only the local session would leave Auth0's session
+      to sign the person straight back in.
 
 15. **A `401` is retried once, after a forced renew.** `notesApi` calls take a `TokenSource`
     (`{ token(): Promise<string>; renew(): Promise<string> }`) instead of a raw string. On `401`
@@ -189,6 +194,8 @@ Following TDD (per `CLAUDE.md`): a failing test before each piece of code, in bo
       `VITE_AUTH_PROVIDER_NAME` go in a
       checked-in `.env`, since an SPA client id is public. The deployed values come from GitHub
       `vars`, as `VITE_API_BASE_URL` does.
+    - The root `.gitignore` ignores `.env` and `.env.*`, so it gains exceptions for
+      `timely-notes-ui/.env` and `timely-notes-ui/.env.e2e`. Every other `.env*` stays ignored.
 
 19. **Tests authenticate with a test scheme, not tokens.** `AppFixture`s register a scheme that
     authenticates from an `X-Test-User` header as `(issuer "test", subject <header>)`. A test can
@@ -198,6 +205,17 @@ Following TDD (per `CLAUDE.md`): a failing test before each piece of code, in bo
     concurrency to *auth and multi-user*. With one user per note, the only collision left is one
     person's two tabs, which is the case already accepted in `NoteAutosave.MD`. It is deferred
     again, not forgotten.
+
+21. **The `auth0` agent skill (`.agents/skills/auth0/`, local and gitignored) is a reference,
+    not the recipe.** Its integration paths install `@auth0/auth0-react` and
+    `Auth0.AspNetCore.Authentication.Api`. Decisions 2 and 14 reject both, because they put the
+    provider in the code. The skill is used for three things:
+    - **Tenant setup** (checklist 0) through the Auth0 CLI and the skill's `tooling-cli`
+      reference, if a script is preferred to the dashboard. On Windows the CLI installs with
+      Scoop, not Homebrew.
+    - **Diagnosis** of a failing sign-in: `pattern-common-errors` covers audience, callback,
+      web origin and logout mismatches.
+    - **The tenant audit** in Verify (its `audit` intent).
 
 ## Architecture
 
@@ -257,15 +275,32 @@ racing each get the same id.
 
 ### 0. Auth0 setup (setup, by hand)
 
-- [ ] Create the Auth0 tenant. Create an **API** with identifier `https://api.timely-notes`
-      (the audience), RS256.
-- [ ] Create a **Single Page Application**. Callback, logout and web origin URLs:
-      `http://localhost:5173` and the deployed UI origin. Refresh token rotation on.
-- [ ] Enable the **Username-Password-Authentication** connection with passkeys on, and the
-      **Google** social connection on Auth0's default development keys — no Google Cloud setup.
-      Turn off every other connection.
-- [ ] Record the domain, client id and audience in `.env` and `appsettings.json`, and as GitHub
-      `vars` and App Service settings for deployment.
+One tenant holding one **API** and one **Application**. The backend is not an Application: it has
+no client id or secret, and talks to Auth0 only to fetch the signing keys. Done in the dashboard,
+or with the CLI (decision 21).
+
+- [x] Create the tenant. Under **Settings → Advanced**, confirm *RP-Initiated Logout End Session
+      Endpoint Discovery* is on, because sign-out needs it (decision 14). Leave **Settings →
+      General → Default Audience** empty, so a missing `audience` fails in development instead of
+      being masked.
+- [x] **Applications → APIs → Create API**: identifier `https://api.timely-notes` (the
+      audience), RS256. In its settings, turn on **Allow Offline Access**; without it Auth0
+      issues no refresh token for this audience. Leave **Allow Skipping User Consent** on. Delete
+      the *Test Application* that Auth0 creates alongside the API.
+- [x] **Applications → Applications → Create Application**, type *Single Page Web
+      Applications*. Allowed Callback URLs, Allowed Logout URLs and Allowed Web Origins:
+      `http://localhost:5173`, as an exact origin with no trailing slash. The deployed origin is
+      section 10. Refresh Token Rotation on. Under **Advanced → Grant Types**, only Authorization Code
+      and Refresh Token.
+- [x] Enable the **Username-Password-Authentication** connection with Passkey on under its
+      Authentication Methods. Set **Authentication → Authentication Profile** to *Identifier
+      First*, which passkeys require. Enable the **Google** social connection on Auth0's default
+      development keys, with no Google Cloud setup. On the Application's **Connections** tab,
+      enable only these two.
+- [x] Record the domain, client id and audience in `.env` and `appsettings.json`. The deployed
+      settings are section 10. The authority is
+      `https://<tenant>.<region>.auth0.com/`, and a token's `iss` includes the trailing `/`.
+- [x] Add the `.gitignore` exceptions for the UI's `.env` and `.env.e2e` (decision 18).
 
 ### 1. The User entity and the schema (`Models/`, `Data/`)
 
@@ -380,9 +415,11 @@ racing each get the same id.
 
 ### 10. Deployment (setup)
 
+- [ ] The Auth0 Application's Allowed Callback URLs, Allowed Logout URLs and Allowed Web Origins
+      gain the deployed UI origin.
 - [ ] App Service settings carry `Auth__Authority` and `Auth__Audience`; confirm its CORS
       allows the `Authorization` header from the UI origin.
-- [ ] `ui.yml` passes `VITE_AUTH_*` from `vars`.
+- [ ] GitHub `vars` carry the `VITE_AUTH_*` values, and `ui.yml` passes them to the build.
 
 ### 11. Docs
 
@@ -398,13 +435,16 @@ racing each get the same id.
 - [ ] `npm run lint`, `npm test`, `npm run build`, `npm run test:e2e`, `npm run test:e2e:integrated`.
 - [ ] `npm run build -- --mode production` with `VITE_AUTH_MODE=static` fails.
 - [ ] By hand, `Postgres` store, `run-dev.ps1`:
-  - [ ] **Create account** opens Auth0's sign-up form; sign up with an email address.
+  - [ ] **Create account** opens Auth0's sign-up form; sign up with an email address. Expect a
+        one-time consent prompt for the API, because Auth0 never skips consent on `localhost`.
   - [ ] Sign in with Google from the same page and see a separate, empty account.
   - [ ] Write a note, reload, and see it still there.
   - [ ] Sign out.
   - [ ] Sign up as a second address and see an empty grid at the same address.
   - [ ] In `psql`: two `users` rows, and each note under the right `user_id`.
 - [ ] Deployed: sign in on the deployed UI; write and read a note.
+- [ ] Audit the tenant with the `auth0` skill (decision 21). Fix each finding, or record it in
+      Implementation notes.
 
 ## Deferred
 
@@ -418,6 +458,9 @@ racing each get the same id.
 - **Account deletion and data export** — decides `ON DELETE`, decision 10.
 - **Changing the email address** — that is the provider's account settings, not this app's.
 - **Row-level security** in Postgres as defence in depth behind decision 6.
+- **DPoP** binds an access token to the browser that requested it, so a token stolen from
+  `sessionStorage` (decision 14) cannot be used anywhere else. `oidc-client-ts` supports it. The
+  API would have to add DPoP proof validation.
 - **Optimistic concurrency** — decision 20.
 - **Persistence for the deployed app** — still `Memory`; per-user notes vanish on restart.
 - **Per-user Schedules** — Schedules stay code; every user has `s1`/`s3`/`s6`.
@@ -425,4 +468,10 @@ racing each get the same id.
 - **`EmptyNotePruning.MD`** — when scheduled, its SQL gains `user_id`.
 
 ## Implementation notes
+
+- **The tenant is `caitmcm.uk.auth0.com`,** with SPA client id `5aIm6T9Gct7kgxvsXaWNXa9JwNGENY3c`
+  and audience `https://api.timely-notes`. None of these is a secret. Its discovery document gives
+  issuer `https://caitmcm.uk.auth0.com/` and an `end_session_endpoint`, so RP-initiated logout is
+  on. The values are in `timely-notes-ui/.env` and in `appsettings.json` under `Auth`. They are
+  not yet in GitHub `vars` or the App Service settings.
 

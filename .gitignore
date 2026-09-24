@@ -14,10 +14,14 @@ Thumbs.db
 
 # Claude Code local settings
 .claude/settings.local.json
+.agents/
 
 # Secrets — nothing here needs these yet; they are here so an accident can't happen
 .env
 .env.*
+# The UI's public OIDC settings and E2E mode — UserNotes.MD decision 18
+!timely-notes-ui/.env
+!timely-notes-ui/.env.e2e
 secrets.json
 *.pfx
 *.p12

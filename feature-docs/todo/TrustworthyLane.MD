@@ -14,7 +14,7 @@ The three:
 | Spec | What it asserts | What was seen |
 | --- | --- | --- |
 | `calendar.spec.ts:120` *re-points the view at a day picked from the grid, in one request* | `api.notesWindows` is exactly `[MOUNT_WINDOW, JUMP_WINDOW]` | Not equal. **The actual value was not captured.** |
-| `note-dialog.spec.ts:166` *clearing and pressing Escape deletes the note too* | `api.writeSummary` is `PUT` then `DELETE` | A second `PUT` before the `DELETE` |
+| `note-dialog.spec.ts:166` *clearing and pressing Escape deletes the note too* | `api.writeSummary` is `PUT` then `DELETE` | A second `PUT` before the `DELETE`. Fixed — unmount aborted the write `finish` was waiting on |
 | `note-dialog.spec.ts:234` *says so when a write fails, and keeps the dialog open* | the dialog is still open | The dialog had closed. Fixed — see `LocalPostgres.MD` §8 |
 
 The first two are **request-count** assertions, and both stand on invariants in `CLAUDE.md`: *a

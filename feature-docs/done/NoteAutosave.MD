@@ -446,8 +446,8 @@ anywhere.
       or flush — nothing is dropped; a subsequent success clears the state. A failed **delete**
       does not retry and does not block: it resolves `finish()` and leaves the note for the
       prune.
-- [x] Unmount clears timers and aborts the in-flight *write*; no state update after unmount.
-      The closing delete is the deliberate exception and survives it.
+- [x] Unmount clears timers and updates no state afterwards. The write in flight is left to land:
+      `finish` waits on it, so aborting it would only send it twice.
 
 ### 9. The dialog (`src/components/NoteDialog.tsx`, `NoteEditor.tsx`)
 

@@ -62,8 +62,7 @@ export function useNoteAutosave({
   const dirtySince = useRef<number | null>(null)
   const mounted = useRef(true)
 
-  // Replaced rather than only aborted on unmount, so the teardown's own final write is not the
-  // request the teardown cancels.
+  // Never aborted: `finish` waits on the write in flight, so cancelling it would only send it twice.
   const controller = useRef(new AbortController())
 
   // Held in a ref so the timer and the teardown call the current ones without re-arming on identity.
@@ -209,9 +208,6 @@ export function useNoteAutosave({
       if (timer.current) {
         clearTimeout(timer.current)
       }
-
-      controller.current.abort()
-      controller.current = new AbortController()
 
       // Fire-and-forget: the thing being torn down must not be able to cancel its own last word.
       void closing.current()

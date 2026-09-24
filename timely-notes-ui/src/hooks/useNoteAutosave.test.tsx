@@ -398,6 +398,39 @@ describe('useNoteAutosave', () => {
     })
   })
 
+  it('lets a write in flight at unmount land, rather than cancelling and repeating it', async () => {
+    let release: () => void = () => {}
+    // Rejects on abort, as `fetch` does.
+    const save = vi
+      .fn()
+      .mockImplementationOnce(
+        (_content: string, signal: AbortSignal) =>
+          new Promise<void>((resolve, reject) => {
+            release = resolve
+            signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))
+          }),
+      )
+      .mockResolvedValue(undefined)
+    const remove = vi.fn().mockResolvedValue(undefined)
+    const view = renderHook(() =>
+      useNoteAutosave({ save, remove, initialContent: 'Morning block.', readNow }),
+    )
+
+    await change(view, '')
+    await advance(DEBOUNCE_MS)
+    expect(save).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      view.unmount()
+    })
+    await act(async () => {
+      release()
+    })
+
+    expect(contentsSaved(save)).toEqual([''])
+    expect(remove).toHaveBeenCalledTimes(1)
+  })
+
   it('runs one request at a time, and the last content wins', async () => {
     let release: () => void = () => {}
     const save = vi

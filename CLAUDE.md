@@ -1,11 +1,3 @@
-# CLAUDE.md
-
-Guidance for Claude Code working in this repo. Rules here override default behaviour.
-
-**Domain concepts live in `DESIGN DOCUMENT.MD`, not here** — what an Instance, a Schedule, a
-period or a note *is*, and why there is no id and no instant. Read it before designing anything
-new. This file covers navigation, process and the rules that follow.
-
 ## The repo
 
 Two independent projects plus the planning docs, wired together in development **only** by the
@@ -14,7 +6,7 @@ origin (`VITE_API_BASE_URL`). No shared build.
 
 | Path | What |
 | --- | --- |
-| `DESIGN DOCUMENT.MD` | Domain model and goals. Intent, not a plan; open questions there are genuinely open. |
+| `DESIGN DOCUMENT.MD` | Domain model and goals — what an Instance, Schedule, period and note *are*, and why there is no id and no instant. Read before designing anything new. Intent, not a plan; its open questions are genuinely open. |
 | `feature-docs/WORKFLOW.MD` | **The process.** Read before specifying or implementing. |
 | `feature-docs/todo/` | The features specified and waiting; each states its own Goal. Empty ⇒ specify the next one first. |
 | `feature-docs/done/` | Finished specifications, kept as the record and the rationale. |
@@ -54,28 +46,28 @@ HTML reporter the default — `show-report` blocks the terminal.
 
 | Where | What |
 | --- | --- |
-| `Models/Schedules.cs` | A Schedule's shape: `Known {1,3,6}`, `PeriodCountFor`, `IsValidPeriodOrdinal`, the only `s`-sigil parse/format. |
-| `Models/Periods.cs` | The only `p`-sigil parse/format. `TryParse` takes the Schedule's span first. |
-| `Models/Note.cs` | The entity. `Models/NoteDayCount.cs` is the counts projection. |
-| `Models/NoteContent.cs` | The one definition of empty: `Normalise` on write, `IsReadable` on read. |
-| `Repositories/` | `INoteRepository` and its two implementations, both singleton. `NoteStoreRegistration` is the provider switch. |
-| `Data/` | `NotesDbContext`, `NoteQueries` (both reads as `IQueryable`), the design-time factory, the checked-in `Migrations/`. |
-| `Endpoints/Notes/` | FastEndpoints REPR — `Request`/`Response`/`Endpoint`/`Validator`, one type per file. |
-| `Program.cs` | Registers `TimeProvider.System`. Handlers never read the clock directly. |
-| `TimelyNotes.API.http` | Ready-made requests for the list routes. |
+| `Models/Schedules.cs` | Known spans `{1,3,6}`, `PeriodCountFor`, `IsValidPeriodOrdinal`, `s`-sigil parse/format. |
+| `Models/Periods.cs` | `p`-sigil parse/format. `TryParse` takes the Schedule's span first. |
+| `Models/Note.cs` | Note entity. `NoteDayCount.cs` is the per-day count projection. |
+| `Models/NoteContent.cs` | Empty-note check: `Normalise` on write, `IsReadable` on read. |
+| `Repositories/` | `INoteRepository`, its memory and Postgres implementations (both singleton), and `NoteStoreRegistration`, which picks the provider. |
+| `Data/` | `NotesDbContext`, `NoteQueries` (both reads as `IQueryable`), the design-time factory, `Migrations/`. |
+| `Endpoints/Notes/` | FastEndpoints REPR: `Request`/`Response`/`Endpoint`/`Validator`, one type per file. |
+| `Program.cs` | Registers `TimeProvider.System`; handlers take the clock from it. |
+| `TimelyNotes.API.http` | Sample requests for every route, including invalid ones. |
 
 **Frontend — `timely-notes-ui/src/`**
 
 | Where | What |
 | --- | --- |
-| `App.tsx` | Owns the lot: Schedule, `anchorDay`, `selected`, `calendarMonth`, the domain calls. Nothing below it fetches. |
-| `hooks/useNoteAutosave.ts` | The autosave engine: debounce, ceiling, dirty check, in-flight guard, save status. |
-| `hooks/` | `useNow` (the only clock read), `useScheduleNotes` (the only note fetch), `useNoteDays` (calendar markers). |
-| `domain/` | Pure time logic — `schedules`, `periods`, `notes`, `days`, `months`, `window`. No React, no fetch. |
+| `App.tsx` | Holds all app state (Schedule, `anchorDay`, `selected`, `calendarMonth`) and the domain calls. Components below it don't fetch. |
+| `hooks/useNoteAutosave.ts` | Autosave: debounce, max wait, dirty check, in-flight guard, save status. |
+| `hooks/` | `useNow` (only clock read), `useScheduleNotes` (only note fetch), `useNoteDays` (calendar markers). |
+| `domain/` | Pure time logic: `schedules`, `periods`, `notes`, `days`, `months`, `window`. No React, no fetch. |
 | `types/index.ts` | `DayKey`, `Note`, `Schedule`, `Period`, `SpanHours`. |
-| `api/notesApi.ts` | The `fetch` wrapper; every route takes a required `AbortSignal`. |
+| `api/notesApi.ts` | `fetch` wrapper; every call takes a required `AbortSignal`. |
 | `components/` | `MenuDrawer`, `SchedulePicker`, `ScheduleView`, `DaySection`, `PeriodRow`, `NoteDialog`, `NoteEditor`, `CalendarDialog`, `MonthGrid`, `icons`. |
-| `e2e/` | Playwright — `fixtures/app.ts` (extended `test`), `fixtures/ScheduleView.ts` (page object), one spec per area. |
+| `e2e/` | Playwright: `fixtures/app.ts` (extended `test`), `fixtures/ScheduleView.ts` (page object), one spec per area. |
 
 Tests sit beside the code they cover (`*.test.ts(x)`); backend test folders mirror the API's layout.
 
@@ -91,13 +83,11 @@ Per `feature-docs/WORKFLOW.MD` — one feature, one document, end to end:
 
 ## Engineering rules
 
-- **TDD, both projects.** Failing test → minimum code → refactor, for all new domain code, not just fixes.
-- **Vitest first, Playwright after.** Never run Playwright inside the TDD loop, and never let it substitute for a unit test — a failing acceptance spec is a symptom, and the fix starts with a new failing unit test.
-- **Pass the cancellation token or signal explicitly, everywhere** — `CancellationToken ct` with no `= default`, threaded through every downstream call including `Send.OkAsync(..., ct)`; `TestContext.Current.CancellationToken` in tests; a required `AbortSignal` on every `notesApi` call. Only exception: third-party APIs with no token overload.
-- **Filtering and grouping belong in the repository**, not the endpoint.
-- **Validate with a FluentValidation `Validator<TRequest>`** beside the endpoint, and make a required query parameter nullable so an omitted one fails `NotNull()` by name.
-- **FastEndpoints only** — no MVC controllers. `Program.cs` ends `public partial class Program;` for the test fixture.
+- **TDD, both projects**, for all new code, not just fixes. Vitest first; Playwright after, never in the loop and never instead of a unit test.
+- **Pass cancellation explicitly, everywhere** — `CancellationToken ct` with no default, down to `Send.OkAsync(..., ct)`; `TestContext.Current.CancellationToken` in tests; a required `AbortSignal` on every `notesApi` call. Third-party APIs with no overload are the only exception.
+- **FastEndpoints only**, no MVC. Filtering and grouping in the repository; validation in a FluentValidation `Validator<TRequest>` beside the endpoint, with required query parameters nullable so an omitted one fails `NotNull()` by name.
 - **Unit tests assert URLs structurally**, never as literal dates; only E2E has a pinned zone.
+- **The `integrated` Playwright lane only tests that the two projects agree.** Everything else goes in `stubbed`.- **Comments are one or two lines, and only say what the code cannot.** This covers XML docs, TSDoc, inline comments and FastEndpoints `Summary`/`Description`. Plain fragments, no mannered prose, never restating the code. Rationale goes in `feature-docs/`. Code can change, so a comment never says code must stay as it is. Delete a stale comment rather than update it.
 
 ## Invariants
 
@@ -117,48 +107,37 @@ feature document named.
 - **`Note now` opens on the current period, never on the selection** — it clears both, then waits for the day to load rather than opening on an unloaded one. → `MenuAndNoteNow.MD`
 - **A dialog that unmounts on close restores focus itself, from an effect** — `<dialog>`'s own restore never runs, and a handler is too early: on Escape the browser's close sequence lands last. → `MenuAndNoteNow.MD`
 
-## Code style
-
-**Comments are concise, and rare** — C# XML docs, TSDoc, inline, and FastEndpoints
-`Summary`/`Description` alike. Never restate the code; comment only what the code cannot carry;
-one or two lines, a fragment over a sentence. Rationale essays belong in `feature-docs/`, and
-deleting a stale comment beats updating it.
-
 ## Current state
 
-**Backend.** Two reads and two writes under `/api/schedules/{schedule}`: `GET …/notes` over a
-required half-open `[searchFrom, searchTo)` of at most 7 days, `GET …/note-days` for the calendar
-markers (capped at 42), `PUT …/notes/{day}/p{ordinal}` (`201` created, `200` replaced) and
-`DELETE` on the same address. Neither read returns an empty note; a bad Schedule, period or
-spelling is a `400` from the validator. No auth, no Schedule endpoints, no custom middleware, no
-HTTPS redirection — CORS and TLS belong to the host.
+**Backend.** Routes under `/api/schedules/{schedule}`:
 
-**Stores.** `Database:Provider` picks one. `Memory` is the default everywhere — CI, the deployed
-app, the whole test suite — seeded across today ± 3 days. `Postgres` is EF Core over a local
-`postgresql-x64-18`, migrations applied by hand, connection string in user secrets under
-`ConnectionStrings:Notes`. Local development only; nothing deployed has persistence yet.
+- `GET …/notes?searchFrom&searchTo`: half-open range of at most 7 days.
+- `GET …/note-days?searchFrom&searchTo`: calendar markers, at most 42 days.
+- `PUT …/notes/{day}/p{ordinal}`: `201` created, `200` replaced.
+- `DELETE …/notes/{day}/p{ordinal}`.
 
-**Frontend.** Two pieces of state, moved by different things: `anchorDay` is the window — the three
-days on screen, `anchor ± 1` — and `selected` is the chosen row. `null` on either means it follows
-the clock, and selecting a row never writes the anchor. `domain/window.ts` holds the arithmetic. The
-three days render in one scroll container with `Earlier days` and `Later days` as its first and last
-children, each stepping the window a whole three days so consecutive windows abut. Above it a single
-fixed header: `Menu` at the left, the title, `Calendar` and `Note now` at the right, all three icon
-buttons named by `aria-label` and `title`. The Schedule lives in `MenuDrawer`, a left-anchored modal
-`<dialog>` that closes on any Schedule press; `Go to today` lives in the `CalendarDialog` as *Today*
-and inside the `Viewing <first> – <last>.` notice, which appears only while the window has carried
-today off screen, and those are the only two places it appears. `Note now` clears both pieces of
-state and opens the current period. Markdown editing is `@mdxeditor/editor` — extend `NoteEditor`'s plugin list rather
-than adding a second editor. Notes save themselves through `useNoteAutosave`, the dialog's one
-button is **Done**, and `App` applies each write to `useScheduleNotes`'s cache rather than
-refetching. No router, no state library. `timely-notes-ui/README.md` is still stock Vite template
-text.
+Reads never return empty notes. The validator returns `400` for a bad Schedule, period or format.
+There is no auth, no Schedule endpoint, no custom middleware and no HTTPS redirection. The host
+handles CORS and TLS.
 
-**Tests.** 274 xUnit, all against the in-memory store; ~382 Vitest; ~89 Playwright in the hermetic
-`stubbed` lane (previewed on `127.0.0.1:5174`, every `/api/**` call fulfilled from a fixture) and 5
-in `integrated`, which holds only the assertions about the two projects agreeing — keep that lane
-small. `NoteEditor` is mocked in `App.test.tsx` and `NoteDialog.test.tsx`: MDXEditor emits no
-change event under jsdom, so its real behaviour is the Playwright lane's job.
+**Stores.** `Database:Provider` selects `Memory` or `Postgres`. `Memory` is the default for CI,
+the deployed app and all tests, seeded with notes from today − 3 to today + 3. `Postgres` is
+EF Core on a local `postgresql-x64-18`, for local development only. The connection string is in
+user secrets under `ConnectionStrings:Notes`. Nothing deployed persists notes.
 
-**Next.** `feature-docs/todo/` is specified and unstarted; each doc's Goal says what it is for, and
-`EmptyNotePruning.MD` is **not scheduled**.
+**Frontend.** `App` holds two separate pieces of state: `anchorDay` (the visible days,
+`anchor ± 1`) and `selected` (the selected period). `null` means follow the clock. Only navigation
+changes `anchorDay`; `domain/window.ts` does the arithmetic. `Earlier days` and `Later days` move
+the window three days. `Go to today` appears only in `CalendarDialog` and in the notice shown when
+today is off screen. The Schedule is picked in `MenuDrawer`. Editing uses `@mdxeditor/editor` in
+`NoteDialog`, saved by `useNoteAutosave`; `App` updates `useScheduleNotes`'s cache after each write
+instead of refetching. There is no router and no state library. `timely-notes-ui/README.md` is
+still the Vite template.
+
+**Tests.** xUnit runs against the in-memory store. Playwright has two lanes. `stubbed` runs on
+`127.0.0.1:5174` and answers every `/api/**` call from a fixture. `integrated` needs the running
+API. `App.test.tsx` and `NoteDialog.test.tsx` mock `NoteEditor` because MDXEditor emits no change
+events under jsdom; Playwright tests the real editor.
+
+**Next.** The docs in `feature-docs/todo/` are specified but not started. `EmptyNotePruning.MD` is
+not scheduled.

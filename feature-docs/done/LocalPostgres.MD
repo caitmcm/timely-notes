@@ -647,6 +647,6 @@ now asserts `true` — a delete that failed after the emptiness was written is s
 **Still open, and now specified separately.** Two request-count specs still flake about one run in
 fifty: *clearing and pressing Escape deletes the note too* saw **two** `PUT`s before its `DELETE`,
 and `calendar.spec.ts:120` saw the wrong set of note windows. Neither is a dialog that closed, and
-neither is touched here — they are `TrustworthyLane.MD`.
+neither is touched here. `LeanStubbedLane.MD` says what became of them.
 
 323 Vitest specs green (317 before), lint clean.

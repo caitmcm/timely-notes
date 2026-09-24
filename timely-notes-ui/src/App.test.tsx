@@ -518,6 +518,21 @@ describe('App — live clock', () => {
     expect(requests(fetchMock)).toHaveLength(asked)
   })
 
+  it('opens the new day’s first period from Note now after midnight, not the row left behind', async () => {
+    vi.setSystemTime(onThe25th(23, 59))
+    stubFetch({ s3: [wireNote(august(26), 1, 'Just past midnight.')] })
+    render(<App />)
+    await act(async () => {})
+    await click(row(25, '06:00 – 09:00'))
+
+    await advance(2 * 60_000)
+    await click(screen.getByRole('button', { name: 'Note now' }))
+    await act(async () => {})
+
+    expect(screen.getByRole('heading', { name: '00:00 – 03:00' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox')).toHaveValue('Just past midnight.')
+  })
+
   it('leaves an open dialog alone over midnight', async () => {
     await mountAt(onThe25th(23, 59))
     await click(screen.getByRole('button', { name: 'Note' }))

@@ -67,7 +67,7 @@ HTML reporter the default — `show-report` blocks the terminal.
 | `types/index.ts` | `DayKey`, `Note`, `Schedule`, `Period`, `SpanHours`. |
 | `api/notesApi.ts` | `fetch` wrapper; every call takes a required `AbortSignal`. |
 | `components/` | `MenuDrawer`, `SchedulePicker`, `ScheduleView`, `DaySection`, `PeriodRow`, `NoteDialog`, `NoteEditor`, `CalendarDialog`, `MonthGrid`, `icons`. |
-| `e2e/` | Playwright: `fixtures/app.ts` (extended `test`), `fixtures/ScheduleView.ts` (page object), one spec per area. |
+| `e2e/` | Playwright: `fixtures/app.ts` (extended `test` and `ApiStub`), `fixtures/ScheduleView.ts` (page object). `stubbed`: `api-contract`, `calendar`, `layout`, `menu`, `note-dialog`, `window`. `integrated`: `backend`. |
 
 Tests sit beside the code they cover (`*.test.ts(x)`); backend test folders mirror the API's layout.
 
@@ -87,7 +87,9 @@ Per `feature-docs/WORKFLOW.MD` — one feature, one document, end to end:
 - **Pass cancellation explicitly, everywhere** — `CancellationToken ct` with no default, down to `Send.OkAsync(..., ct)`; `TestContext.Current.CancellationToken` in tests; a required `AbortSignal` on every `notesApi` call. Third-party APIs with no overload are the only exception.
 - **FastEndpoints only**, no MVC. Filtering and grouping in the repository; validation in a FluentValidation `Validator<TRequest>` beside the endpoint, with required query parameters nullable so an omitted one fails `NotNull()` by name.
 - **Unit tests assert URLs structurally**, never as literal dates; only E2E has a pinned zone.
-- **The `integrated` Playwright lane only tests that the two projects agree.** Everything else goes in `stubbed`.- **Comments are one or two lines, and only say what the code cannot.** This covers XML docs, TSDoc, inline comments and FastEndpoints `Summary`/`Description`. Plain fragments, no mannered prose, never restating the code. Rationale goes in `feature-docs/`. Code can change, so a comment never says code must stay as it is. Delete a stale comment rather than update it.
+- **The `integrated` Playwright lane only tests that the two projects agree.** Everything else goes in `stubbed`.
+- **A `stubbed` spec checks only what jsdom cannot:** layout and scrolling, the native `<dialog>`, the real editor, or a pinned zone. Anything else is a Vitest test. → `LeanStubbedLane.MD`
+- **Comments are one or two lines, and only say what the code cannot.** This covers XML docs, TSDoc, inline comments and FastEndpoints `Summary`/`Description`. Plain fragments, no mannered prose, never restating the code. Rationale goes in `feature-docs/`. Code can change, so a comment never says code must stay as it is. Delete a stale comment rather than update it.
 
 ## Invariants
 
@@ -136,7 +138,7 @@ still the Vite template.
 
 **Tests.** xUnit runs against the in-memory store. Playwright has two lanes. `stubbed` runs on
 `127.0.0.1:5174` and answers every `/api/**` call from a fixture. `integrated` needs the running
-API. `App.test.tsx` and `NoteDialog.test.tsx` mock `NoteEditor` because MDXEditor emits no change
+API. `stubbed` has 15 tests and `integrated` 5. `App.test.tsx` and `NoteDialog.test.tsx` mock `NoteEditor` because MDXEditor emits no change
 events under jsdom; Playwright tests the real editor.
 
 **Next.** The docs in `feature-docs/todo/` are specified but not started. `EmptyNotePruning.MD` is

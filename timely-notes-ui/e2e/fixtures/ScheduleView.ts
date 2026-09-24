@@ -27,15 +27,6 @@ export class ScheduleView {
     await this.page.clock.pauseAt(this.frozenAt)
   }
 
-
-  /**
-   * Loads the page again without re-pausing: a spec that has run the clock forward is already past
-   * the frozen instant, and pausing back onto it is a fast-forward into the past.
-   */
-  async reload() {
-    await this.page.goto('/')
-  }
-
   /** One day's section, scoped by the heading its period list is labelled with. */
   day(heading: string): DayScope {
     return new DayScope(
@@ -72,31 +63,13 @@ export class ScheduleView {
     await this.menu.waitFor()
   }
 
-  async closeMenu() {
-    await this.menu.getByRole('button', { name: 'Close' }).click()
-  }
-
   get calendarButton(): Locator {
     return this.page.getByRole('button', { name: 'Calendar' })
-  }
-
-  get noteNowButton(): Locator {
-    return this.page.getByRole('button', { name: 'Note now' })
-  }
-
-  /** Inside the calendar now — `Go to today` is the notice's own button. */
-  get todayButton(): Locator {
-    return this.page.getByRole('button', { name: 'Today' })
   }
 
   /** The header, which sits outside the scroll container and must never move. */
   get header(): Locator {
     return this.page.locator('.app__header')
-  }
-
-  /** Comes and goes with the window; the header's buttons never do. */
-  get rolloverNotice(): Locator {
-    return this.page.getByText(/^Viewing /)
   }
 
   /** The two arrows: content, not chrome — the first and last children of the scroller. */
@@ -106,11 +79,6 @@ export class ScheduleView {
 
   get laterDaysButton(): Locator {
     return this.page.getByRole('button', { name: 'Later days' })
-  }
-
-  /** Lives inside the notice, so it exists only while the view is away from today. */
-  get goToTodayButton(): Locator {
-    return this.page.getByRole('button', { name: 'Go to today' })
   }
 
   get error(): Locator {
@@ -152,42 +120,9 @@ export class ScheduleView {
     return this.dialog.getByRole('heading')
   }
 
-  get previousMonth(): Locator {
-    return this.dialog.getByRole('button', { name: 'Previous month' })
-  }
-
-  get nextMonth(): Locator {
-    return this.dialog.getByRole('button', { name: 'Next month' })
-  }
-
-  /**
-   * Grid cells by day number. A grid shows whole weeks, so a number outside the month can repeat
-   * one inside it — callers pick `.first()`/`.last()` where that is so.
-   */
-  gridDay(dayOfMonth: number): Locator {
-    return this.dialog.getByRole('button', { name: new RegExp(`^${dayOfMonth}(,|$)`) })
-  }
-
   /** The grid cell the clock is on. */
   get gridToday(): Locator {
     return this.dialog.locator('[aria-current="date"]')
-  }
-
-  /** Every cell of the month grid, in order. */
-  get gridCells(): Locator {
-    return this.dialog.locator('.month-grid__day')
-  }
-
-  /** The days shown from a neighbouring month — dimmed, but still pickable. */
-  get gridOutsideCells(): Locator {
-    return this.dialog.locator('.month-grid__day[data-outside]')
-  }
-
-  /** The weekday headings, which are `aria-hidden` and so have no accessible name. */
-  async weekdays(): Promise<string[]> {
-    return this.dialog
-      .locator('.month-grid__weekday')
-      .evaluateAll((cells) => cells.map((cell) => cell.textContent?.trim() ?? ''))
   }
 
   /** Whether the open dialog is modal in the browser's own terms, not merely visible. */
@@ -226,10 +161,6 @@ export class DayScope {
     return this.root.getByRole('option', { selected: true })
   }
 
-  get currentRow(): Locator {
-    return this.root.locator('[aria-current="time"]')
-  }
-
   get noteButton(): Locator {
     return this.root.getByRole('button', { name: 'Note', exact: true })
   }
@@ -242,12 +173,5 @@ export class DayScope {
   /** The `Loading notes…` marker in the day heading. */
   get status(): Locator {
     return this.root.getByRole('status')
-  }
-
-  /** The gutter times, in DOM order. */
-  async startTimes(): Promise<string[]> {
-    return this.root
-      .locator('.period-row__time')
-      .evaluateAll((times) => times.map((time) => time.textContent?.trim() ?? ''))
   }
 }

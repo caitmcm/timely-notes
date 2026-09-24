@@ -13,7 +13,8 @@ developer machine. This feature puts every stubbed spec into one of three groups
   spec.
 - **Delete.** A named Vitest test already asserts it.
 
-Done means the lane has 22 tests, each kept for a reason stated below. Every moved behaviour has a
+Done means the lane has 22 tests, each kept for a reason stated below. *(Finished at 15: the kept
+tests that shared a page load were merged. See Implementation notes.)* Every moved behaviour has a
 Vitest test that has been seen to fail. `CLAUDE.md` says what a Playwright spec is for, so the lane
 does not grow back.
 
@@ -193,47 +194,47 @@ All the work is in `timely-notes-ui/`. `TimelyNotes.Backend` is not touched.
 
 ### 1. Measure first
 
-- [ ] Record the wall-clock time of `npm run test:e2e` in the implementation notes twice. First
+- [x] Record the wall-clock time of `npm run test:e2e` in the implementation notes twice. First
       from cold, with `dist/` deleted and nothing on 5174. Then with a preview server already
       running, which is the test time without the build.
 
 ### 2. Moves: Vitest first, each one seen to fail
 
-- [ ] `PeriodRow`: Enter on a focused row selects it. Seen red with the `Enter` branch removed.
-- [ ] `PeriodRow`: Space on a focused row selects it, and the keydown is default-prevented. Seen red
+- [x] `PeriodRow`: Enter on a focused row selects it. Seen red with the `Enter` branch removed.
+- [x] `PeriodRow`: Space on a focused row selects it, and the keydown is default-prevented. Seen red
       with `preventDefault` removed.
-- [ ] `PeriodRow`: Enter on the Note button opens the note and does not select. Seen red with the
+- [x] `PeriodRow`: Enter on the Note button opens the note and does not select. Seen red with the
       `target === currentTarget` guard removed.
-- [ ] `useScheduleNotes`: a fetched note whose content is blank is not in its day's list. Seen red
+- [x] `useScheduleNotes`: a fetched note whose content is blank is not in its day's list. Seen red
       with the `isBlank` filter removed.
-- [ ] `App — live clock`: after a midnight rollover, Note now opens the new day's first period.
+- [x] `App — live clock`: after a midnight rollover, Note now opens the new day's first period.
       Seen red by making Note now open the selection instead.
 
 ### 3. Prune the lane
 
-- [ ] `api-contract.spec.ts`: two tests, as audited.
-- [ ] `calendar.spec.ts`: two tests, as audited.
-- [ ] `menu.spec.ts`: three tests, as audited.
-- [ ] `note-dialog.spec.ts`: nine tests, as audited.
-- [ ] `window.spec.ts`: one test, as audited.
-- [ ] `day-view.spec.ts`, `schedule.spec.ts` and `selection.spec.ts` are deleted.
-- [ ] Remove the `ScheduleView` page-object members and `ApiStub` helpers that nothing uses any
+- [x] `api-contract.spec.ts`: ~~two tests, as audited~~ one test: the UTC+12 read, render and write.
+- [x] `calendar.spec.ts`: ~~two tests, as audited~~ one test: modal, then Escape.
+- [x] `menu.spec.ts`: ~~three tests, as audited~~ two: modal then Escape, and the outside press.
+- [x] `note-dialog.spec.ts`: ~~nine tests, as audited~~ six, merged as in the notes.
+- [x] `window.spec.ts`: one test, as audited.
+- [x] `day-view.spec.ts`, `schedule.spec.ts` and `selection.spec.ts` are deleted.
+- [x] Remove the `ScheduleView` page-object members and `ApiStub` helpers that nothing uses any
       more. `npm run lint` and `tsc -b` are clean.
-- [ ] `npx playwright test --list --project=stubbed` reports 22 tests.
+- [x] `npx playwright test --list --project=stubbed` reports ~~22~~ 15 tests.
 
 ### 4. Keep it lean
 
-- [ ] Add a rule to `CLAUDE.md` › Engineering rules: *a stubbed spec checks only what jsdom cannot:
+- [x] Add a rule to `CLAUDE.md` › Engineering rules: *a stubbed spec checks only what jsdom cannot:
       layout and scrolling, the native `<dialog>`, the real editor, or a pinned zone.*
-- [ ] Update `CLAUDE.md` › Navigation for the deleted spec files.
+- [x] Update `CLAUDE.md` › Navigation for the deleted spec files.
 
 ## Verify
 
-- [ ] `npm run lint`, `npm test` and `npm run build` from `timely-notes-ui/`, all green, with five
+- [x] `npm run lint`, `npm test` and `npm run build` from `timely-notes-ui/`, all green, with five
       more Vitest tests than before.
-- [ ] `npm run test:e2e`, with 22 tests green, timed both ways as in §1. Record both times next to
+- [x] `npm run test:e2e`, with ~~22~~ 15 tests green, timed both ways as in §1. Record both times next to
       the baseline.
-- [ ] `npm run test:e2e:integrated`: five tests, green and untouched.
+- [x] `npm run test:e2e:integrated`: five tests, green and untouched.
 
 ## Deferred
 
@@ -250,4 +251,37 @@ All the work is in `timely-notes-ui/`. `TimelyNotes.Backend` is not touched.
 
 ## Implementation notes
 
-*Filled in as the work lands.*
+- **Baseline, 89 tests.** Cold (`dist/` deleted, nothing on 5174): 45 s wall clock, Playwright
+  reporting 43.7 s. Warm (preview server already up): 19 s, Playwright reporting 18.3 s. The build
+  and server start cost about 26 s of the cold run.
+- **Space is checked by `fireEvent.keyDown`'s return value**, which is `false` once the handler
+  calls `preventDefault`. `userEvent` hides that.
+- **Further merges, 22 → 15.** Each stubbed test pays a browser context and a cold load of the
+  editor bundle, so kept tests sharing a page load became one test:
+  - `api-contract`: the UTC+12 read, render and write in one load. The same-origin check from the
+    deleted `:25` went into it at no cost.
+  - `calendar` and `menu`: the modal check and the Escape close are one open-then-close journey.
+  - `layout`: the two 1h tests are one. Both switched to 1h first.
+  - `note-dialog`: `:47`, `:80` and `:302` are one test. It opens the markdown note, runs the
+    clock past the debounce, closes it, opens an empty period, and asserts no write at the end.
+    This is stronger than `:80`, which only opened an empty note, because normalising real
+    markdown is what would fire a spurious change. `:101` and `:288` are one test: the typed `#`
+    becomes a heading and is written in one PUT.
+- **`:166` no longer reloads.** The reload after the Escape delete checked the stub's read filter,
+  the reason `:155` was deleted.
+- **The modal checks wait 250 ms, not 2 s, for the click they expect to fail.** Playwright reports
+  "intercepts pointer events" on its first attempt, so the longer timeout was 2 s of idle time in
+  each of three tests.
+- **The fixtures went too.** `ScheduleView` lost fourteen members. `ApiStub` lost its failure,
+  delay, inspection and window-summary helpers, and the `logs` fixture. The seed keeps only the
+  three `s3` notes the kept specs read. The `note-days` route is still stubbed, because opening the
+  calendar requests it.
+- **`NowOnTheGrid.MD` §5 is repointed.** It named `day-view.spec.ts` and `selection.spec.ts`. Its
+  geometry checks now go in `layout.spec.ts`. The DOM-only checks were already Vitest items in its
+  §2 and §3, except the line crossing midnight, which becomes an `App — live clock` test.
+- **The first baseline was an unusually cold machine.** Rerun back to back with the new lane, the
+  old 89 tests took 24 s cold (22.6 s reported). `npm run build` alone takes about 3 s.
+- **Result.** Stubbed lane: 15 tests. Cold 9 s (8.1 s reported), against 24 s. Warm 5 s (4.3 s
+  reported), against 19 s. Ten repeats with `--repeat-each=10`: 150 passed, none flaky. Vitest has
+  388 tests, five more than before. Lint, build and `tsc -b` are clean. Integrated lane: 5 passed,
+  untouched.

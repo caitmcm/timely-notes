@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { buildPeriods } from '../domain/periods'
 import { toDayKey } from '../domain/days'
@@ -87,6 +87,34 @@ describe('PeriodRow', () => {
 
     expect(onSelect).toHaveBeenCalledWith(period)
     expect(onOpenNote).not.toHaveBeenCalled()
+  })
+
+  it('selects the period on Enter from the focused row', async () => {
+    const { onSelect, period } = renderRow()
+
+    screen.getByRole('option').focus()
+    await userEvent.keyboard('{Enter}')
+
+    expect(onSelect).toHaveBeenCalledWith(period)
+  })
+
+  it('selects the period on Space, and keeps the key from scrolling the page', () => {
+    const { onSelect, period } = renderRow()
+
+    const notPrevented = fireEvent.keyDown(screen.getByRole('option'), { key: ' ' })
+
+    expect(onSelect).toHaveBeenCalledWith(period)
+    expect(notPrevented).toBe(false)
+  })
+
+  it('opens the note on Enter from the Note button, without selecting the row', async () => {
+    const { onOpenNote, onSelect, period } = renderRow({ isSelected: true })
+
+    screen.getByRole('button', { name: 'Note' }).focus()
+    await userEvent.keyboard('{Enter}')
+
+    expect(onOpenNote).toHaveBeenCalledWith(period)
+    expect(onSelect).not.toHaveBeenCalled()
   })
 
   it.each([

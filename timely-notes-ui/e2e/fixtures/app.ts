@@ -12,15 +12,6 @@ const NOTE_ROUTE = '**/api/schedules/*/notes/*/*'
 /** How far behind the frozen instant the clock starts — margin for the page load, not a wait. */
 const INSTALL_LEAD_MS = 10 * 60 * 1000
 
-const windowsOf = (requests: URL[]) => [
-  ...new Set(
-    requests.map(
-      (url) =>
-        `${url.pathname.split('/')[3]} ${url.searchParams.get('searchFrom')} ${url.searchParams.get('searchTo')}`,
-    ),
-  ),
-]
-
 /** A write the browser made, as the spec reads it: the verb, the address, and what was sent. */
 export interface WriteRequest {
   method: 'PUT' | 'DELETE'
@@ -34,99 +25,30 @@ export interface WriteRequest {
 /** Both read routes, stubbed from the fixtures and recording what the browser actually asked for. */
 export class ApiStub {
   readonly notesRequests: URL[] = []
-  readonly noteDayRequests: URL[] = []
   readonly writes: WriteRequest[] = []
 
   private notes: Record<string, WireNote[]> = { ...NOTES }
-  private status = 200
-  private delayMs = 0
-  private failWrites: number | null = null
-
-  /** Reply to everything with this status instead; the body is an empty problem document. */
-  failWith(status: number) {
-    this.status = status
-  }
-
-  /** Hold every reply back, so the loading state is observable. */
-  delayBy(milliseconds: number) {
-    this.delayMs = milliseconds
-  }
-
-  setNotes(shortName: string, notes: WireNote[]) {
-    this.notes = { ...this.notes, [shortName]: notes }
-  }
-
-  /** Answer every write with this status instead, leaving the store alone. */
-  failWritesWith(status: number) {
-    this.failWrites = status
-  }
-
-  /** Take a note out from under an open dialog, as a prune would. */
-  dropNote(shortName: string, day: string, ordinal: number) {
-    this.notes = {
-      ...this.notes,
-      [shortName]: (this.notes[shortName] ?? []).filter(
-        (note) => !(note.day === day && note.periodOrdinal === ordinal),
-      ),
-    }
-  }
-
-  /** What the store holds for a period — the assertion that it *became* something, not just was sent. */
-  noteAt(shortName: string, day: string, ordinal: number): WireNote | undefined {
-    return (this.notes[shortName] ?? []).find(
-      (note) => note.day === day && note.periodOrdinal === ordinal,
-    )
-  }
-
-  countAt(shortName: string, day: string, ordinal: number): number {
-    return (this.notes[shortName] ?? []).filter(
-      (note) => note.day === day && note.periodOrdinal === ordinal,
-    ).length
-  }
 
   get writeSummary(): string[] {
     return this.writes.map((write) => `${write.method} ${write.day}/p${write.ordinal}`)
   }
 
-  get requests(): URL[] {
-    return [...this.notesRequests, ...this.noteDayRequests]
-  }
-
-  /**
-   * The distinct windows asked for, first seen first — `shortName searchFrom searchTo`. Counts go
-   * through this rather than through the raw requests because `StrictMode` runs every effect twice
-   * in dev, so the same window legitimately arrives twice; what the specs are asserting is that no
-   * render and no clock tick asks for a *new* one.
-   */
-  get notesWindows(): string[] {
-    return windowsOf(this.notesRequests)
-  }
-
-  get noteDayWindows(): string[] {
-    return windowsOf(this.noteDayRequests)
-  }
-
   async install(page: Page) {
     await page.route(NOTES_ROUTE, async (route, request) => {
-      const url = new URL(request.url())
-      this.notesRequests.push(url)
+      this.notesRequests.push(new URL(request.url()))
 
       await this.reply(route, (shortName, from, to) =>
         (this.notes[shortName] ?? []).filter((note) => inWindow(note.day, from, to)),
       )
     })
 
-    await page.route(NOTE_DAYS_ROUTE, async (route, request) => {
-      const url = new URL(request.url())
-      this.noteDayRequests.push(url)
-
+    await page.route(NOTE_DAYS_ROUTE, async (route) => {
       await this.reply(route, (shortName, from, to) =>
         noteDaysFor((this.notes[shortName] ?? []).filter((note) => inWindow(note.day, from, to))),
       )
     })
 
-    // Behaves like the real upsert, so a spec can assert what the store *became*, not only what
-    // was sent: the same address twice is one note, 201 then 200.
+    // Behaves like the real upsert: the same address twice is one note, 201 then 200.
     await page.route(NOTE_ROUTE, async (route, request) => {
       const { pathname } = new URL(request.url())
       const [, , , shortName, , day, period] = pathname.split('/')
@@ -136,17 +58,12 @@ export class ApiStub {
 
       this.writes.push({ method, shortName, day, ordinal, url: request.url(), content })
 
-      if (this.failWrites !== null) {
-        await route.fulfill({ status: this.failWrites, contentType: 'application/json', body: '{}' })
-
-        return
-      }
-
       const held = this.notes[shortName] ?? []
       const existing = held.find((note) => note.day === day && note.periodOrdinal === ordinal)
+      const others = held.filter((note) => note !== existing)
 
       if (method === 'DELETE') {
-        this.dropNote(shortName, day, ordinal)
+        this.notes = { ...this.notes, [shortName]: others }
         await route.fulfill({ status: existing ? 204 : 404 })
 
         return
@@ -160,10 +77,7 @@ export class ApiStub {
         modifiedAt: WRITTEN_AT,
       }
 
-      this.notes = {
-        ...this.notes,
-        [shortName]: [...held.filter((note) => note !== existing), written],
-      }
+      this.notes = { ...this.notes, [shortName]: [...others, written] }
 
       await route.fulfill({
         status: existing ? 200 : 201,
@@ -177,16 +91,6 @@ export class ApiStub {
     route: Parameters<Parameters<Page['route']>[1]>[0],
     body: (shortName: string, searchFrom: string, searchTo: string) => unknown,
   ) {
-    if (this.delayMs > 0) {
-      await new Promise((resolve) => setTimeout(resolve, this.delayMs))
-    }
-
-    if (this.status !== 200) {
-      await route.fulfill({ status: this.status, contentType: 'application/json', body: '{}' })
-
-      return
-    }
-
     const url = new URL(route.request().url())
     const shortName = url.pathname.split('/')[3]
     const searchFrom = url.searchParams.get('searchFrom') ?? ''
@@ -203,14 +107,12 @@ export class ApiStub {
 interface AppFixtures {
   api: ApiStub
   scheduleView: ScheduleView
-  /** Everything the page logged, in order. Nothing in the app logs any more; kept for a stray one. */
-  logs: string[]
 }
 
 /**
- * The stubbed lane: a clock frozen at 20:20 on 25/08/2026 and both read routes fulfilled from
- * fixtures. `install()` + `pauseAt()` rather than `setFixedTime`, because §4 fast-forwards across
- * midnight and that needs an installed clock.
+ * The stubbed lane: a clock frozen at 20:20 on 25/08/2026 and every route fulfilled from fixtures.
+ * `install()` + `pauseAt()` rather than `setFixedTime`, because the note specs run the debounce
+ * forward and that needs an installed clock.
  */
 export const test = base.extend<AppFixtures>({
   page: async ({ page }, use) => {
@@ -231,17 +133,6 @@ export const test = base.extend<AppFixtures>({
     },
     { auto: true },
   ],
-
-  logs: async ({ page }, use) => {
-    const logs: string[] = []
-    page.on('console', (message) => {
-      if (message.type() === 'log') {
-        logs.push(message.text())
-      }
-    })
-
-    await use(logs)
-  },
 
   scheduleView: async ({ page }, use) => {
     await use(new ScheduleView(page, FROZEN_NOW))

@@ -16,11 +16,13 @@ test.beforeEach(async ({ scheduleView }) => {
   await scheduleView.open()
 })
 
-test('fits all 24 rows of a day inside that day’s period list at 1h', async ({ scheduleView }) => {
+test('fits 24 rows in a day at 1h, and makes a 6h row six of them over the same height', async ({
+  scheduleView,
+}) => {
+  const day = scheduleView.day(FOCUS)
+
   await scheduleView.openMenu()
   await scheduleView.schedule('1h').click()
-
-  const day = scheduleView.day(FOCUS)
   await expect(day.rows).toHaveCount(24)
 
   const list = (await day.periodList.boundingBox())!
@@ -36,20 +38,11 @@ test('fits all 24 rows of a day inside that day’s period list at 1h', async ({
     expect(row.top).toBeGreaterThanOrEqual(list.y - TOLERANCE)
     expect(row.bottom).toBeLessThanOrEqual(list.y + list.height + TOLERANCE)
   }
-})
-
-test('makes a 6h row six times a 1h row, over a day of unchanging height', async ({
-  scheduleView,
-}) => {
-  const day = scheduleView.day(FOCUS)
 
   // The second row, not the first: `.period-row:first-child` drops its top border, so only the
   // rows that carry one are comparable across two different row counts.
-  await scheduleView.openMenu()
-  await scheduleView.schedule('1h').click()
-  await expect(day.rows).toHaveCount(24)
   const hourly = await heightOf(day.rows.nth(1))
-  const hourlyDay = await heightOf(day.periodList)
+  const hourlyDay = list.height
 
   await scheduleView.openMenu()
   await scheduleView.schedule('6h').click()

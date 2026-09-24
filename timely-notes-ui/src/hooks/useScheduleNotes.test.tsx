@@ -269,6 +269,15 @@ describe('useScheduleNotes', () => {
 
     expect(dayCell(24)).toHaveAttribute('data-loaded', 'true')
   })
+
+  it('leaves a fetched note with blank content out of its day', async () => {
+    stubFetch([wireNote(24), { ...wireNote(24), periodOrdinal: 5, content: ' \n\n ' }])
+
+    render(<Probe schedule={s3} from={day(24)} to={day(24)} />)
+
+    await waitFor(() => expect(dayCell(24)).toHaveAttribute('data-loaded', 'true'))
+    expect(dayCell(24)).toHaveTextContent(/^d24$/)
+  })
 })
 
 describe('useScheduleNotes cache edits', () => {

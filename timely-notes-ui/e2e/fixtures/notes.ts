@@ -4,8 +4,7 @@
  * period, so no instant is written here at all beyond the two audit stamps, and those are 28/08
  * throughout so "placed by the period, never by an audit stamp" is asserted in the browser too.
  *
- * The ordinals below are `s3`'s: `p4` is 09:00–12:00, `p5` 12:00–15:00, `p6` 15:00–18:00 and `p7`
- * 18:00–21:00. No two notes of one Schedule share a period.
+ * The ordinals below are `s3`'s: `p4` is 09:00–12:00 and `p7` 18:00–21:00.
  */
 
 export interface WireNote {
@@ -36,26 +35,14 @@ const note = (day: string, periodOrdinal: number, content: string): WireNote => 
 const newestFirst = (notes: WireNote[]) =>
   [...notes].sort((a, b) => b.day.localeCompare(a.day) || b.periodOrdinal - a.periodOrdinal)
 
-/**
- * 25/08 carries the frozen day's notes — three periods filled, one of them markdown. 26/08 proves a
- * note lands on the day it is addressed to rather than the focus day, 24/08 is deliberately empty,
- * and 17/08 is the calendar's jump target: far enough from the frozen day that its three-day window
- * shares nothing with the cached one.
- */
+/** 25/08 is the frozen day, one note of it markdown; 26/08 is a rendered day in Auckland too. */
 const s3 = newestFirst([
-  note('2026-07-15', 4, 'July: an older note.'),
-  note('2026-08-17', 4, 'Jump target: the week before.'),
-  note('2026-08-17', 5, 'Jump target: a second note.'),
   note('2026-08-25', 4, 'Morning block: drafted the TDD plan.'),
-  note('2026-08-25', 6, 'Afternoon block: wired up FastEndpoints.'),
   note('2026-08-25', 7, '# Stand-up\n\nBlocked.'),
   note('2026-08-26', 4, 'Tomorrow: review the schedule.'),
 ])
 
-const s1 = [note('2026-08-25', 10, 'Hourly: one small thing.')]
-const s6 = [note('2026-08-25', 2, 'Six-hourly: the long block.')]
-
-export const NOTES: Record<string, WireNote[]> = { s1, s3, s6 }
+export const NOTES: Record<string, WireNote[]> = { s3 }
 
 /** Counts derived from the notes themselves, so a marker can never disagree with a row. */
 export function noteDaysFor(notes: WireNote[]): WireNoteDay[] {

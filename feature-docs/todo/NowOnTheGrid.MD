@@ -145,19 +145,18 @@ aria-hidden="true" style={{ '--now-fraction': fraction }} />` with a dot child. 
 
 ### 5. E2E
 
-- [ ] `e2e/fixtures/ScheduleView.ts`: `goToTodayButton` → `goToNowButton`; add `DayScope.nowLine`.
-      Update every spec that presses it. _(Setup step, no test of its own.)_
-- [ ] `day-view.spec.ts`: the line renders on the current day only — one on 25/08/2026, none on its
-      neighbours.
-- [ ] `day-view.spec.ts`: it sits inside the box of the row marked `aria-current="time"`, at every
-      Schedule — assert against the row's bounding box, not a literal offset.
-- [ ] `day-view.spec.ts`: fast-forwarding the clock half an hour moves the line down, and by
-      roughly the fraction of the day column that half an hour is.
-- [ ] `day-view.spec.ts`: crossing midnight moves the line to the newly current day and leaves none
-      on the day that has just ended — the rollover journey, seen through the line.
+Geometry and computed style only, per `LeanStubbedLane.MD`: which day holds the line, and that
+selection leaves the marker alone, are the Vitest tests in §2 and §3.
+
+- [ ] `e2e/fixtures/ScheduleView.ts`: add `DayScope.nowLine`. _(Setup step, no test of its own.)_
+- [ ] `layout.spec.ts`: the line sits inside the box of the row marked `aria-current="time"`, at
+      every Schedule — assert against the row's bounding box, not a literal offset.
+- [ ] `layout.spec.ts`: fast-forwarding the clock half an hour moves the line down, and by roughly
+      the fraction of the day column that half an hour is.
 - [ ] `layout.spec.ts`: the current period is distinguished by more than colour, and stays
       distinguished when another row is selected — the parallel of the existing selection spec.
-- [ ] `selection.spec.ts`: selecting another row keeps the current row's marker and its line.
+- [ ] Test in `src/App.test.tsx`, `App — live clock`: crossing midnight moves the line to the newly
+      current day and leaves none on the day that has just ended.
 
 ### 6. Documentation
 

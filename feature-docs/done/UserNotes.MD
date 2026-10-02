@@ -415,11 +415,14 @@ or with the CLI (decision 21).
 
 ### 10. Deployment (setup) — deferred until the local Verify passes
 
-- [ ] The Auth0 Application's Allowed Callback URLs, Allowed Logout URLs and Allowed Web Origins
+The steps, with the deployed Postgres, are in `DeployedEnvironment.MD`, which ticks this section.
+
+- [x] The Auth0 Application's Allowed Callback URLs, Allowed Logout URLs and Allowed Web Origins
       gain the deployed UI origin.
-- [ ] App Service settings carry `Auth__Authority` and `Auth__Audience`; confirm its CORS
-      allows the `Authorization` header from the UI origin.
-- [ ] GitHub `vars` carry the `VITE_AUTH_*` values, and `ui.yml` passes them to the build.
+- [x] ~~App Service settings carry `Auth__Authority` and `Auth__Audience`;~~ they deploy in
+      `appsettings.json` (`DeployedEnvironment.MD` decision 11). Confirm its CORS allows the
+      `Authorization` header from the UI origin.
+- [x] GitHub `vars` carry the `VITE_AUTH_*` values, and `ui.yml` passes them to the build.
 
 ### 11. Docs
 
@@ -442,9 +445,9 @@ or with the CLI (decision 21).
   - [x] Sign out.
   - [x] ~~Sign up as a second address and see an empty grid at the same address.~~ Skipped with the Google check.
   - [x] In `psql`: two `users` rows, and each note under the right `user_id`.
-- [ ] Deployed: sign in on the deployed UI; write and read a note. Deferred with section 10.
-- [ ] Audit the tenant with the `auth0` skill (decision 21). Fix each finding, or record it in
-      Implementation notes. Deferred with section 10: the tenant gains its production URLs then.
+- [x] Deployed: sign in on the deployed UI; write and read a note. Done by `DeployedEnvironment.MD`.
+- [x] ~~Audit the tenant with the `auth0` skill (decision 21). Fix each finding, or record it in
+      Implementation notes.~~ Deferred again, in `DeployedEnvironment.MD`.
 
 ## Deferred
 
@@ -463,6 +466,7 @@ or with the CLI (decision 21).
   API would have to add DPoP proof validation.
 - **Optimistic concurrency** — decision 20.
 - **Persistence for the deployed app** — still `Memory`; per-user notes vanish on restart.
+  Taken up by `DeployedEnvironment.MD`.
 - **Per-user Schedules** — Schedules stay code; every user has `s1`/`s3`/`s6`.
 - **Per-user timezone** — the design document's Schedule-carries-a-timezone note is unchanged.
 - **`EmptyNotePruning.MD`** — when scheduled, its SQL gains `user_id`.

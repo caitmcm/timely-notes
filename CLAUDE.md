@@ -132,11 +132,11 @@ Schedule, period or format. There is no Schedule endpoint, no custom middleware 
 redirection. The host handles CORS and TLS.
 
 **Stores.** `Database:Provider` selects `Memory` or `Postgres`, for notes and users alike.
-`Memory` is the default for CI, the deployed app and all tests; it seeds each user with notes from
-today − 3 to today + 3 on their first request. `Postgres` is EF Core on a local
-`postgresql-x64-18`, for local development only, with a `users` table that `notes.user_id`
-references. The connection string is in user secrets under `ConnectionStrings:Notes`. Nothing
-deployed persists notes or users.
+`Memory` is the default for CI and all tests; it seeds each user with notes from today − 3 to
+today + 3 on their first request. `Postgres` is EF Core, with a `users` table that
+`notes.user_id` references. Locally it is `postgresql-x64-18`, with the connection string in user
+secrets under `ConnectionStrings:Notes`. Deployed, it is Neon's free plan, with the connection
+string in App Service; migrations are run by hand from a developer shell. → `DeployedEnvironment.MD`
 
 **Frontend.** Signed out, the app shows `SignInScreen`, whose **Sign in** and **Create account**
 both go to Auth0's hosted page (Authorization Code + PKCE through `oidc-client-ts` and
@@ -158,5 +158,6 @@ both run the UI in `e2e` mode, with static auth. `stubbed` runs on `127.0.0.1:51
 signs in with a `dotnet user-jwts` token. `stubbed` has 15 tests and `integrated` 5. `App.test.tsx` and `NoteDialog.test.tsx` mock `NoteEditor` because MDXEditor emits no change
 events under jsdom; Playwright tests the real editor.
 
-**Next.** `UserNotes.MD` is built, tested and verified locally against Postgres and
-Auth0. Deployment (section 10) and the tenant audit remain, deferred. `EmptyNotePruning.MD` is not scheduled.
+**Next.** `UserNotes.MD` and `DeployedEnvironment.MD` are done: the deployed app signs in through
+Auth0 and keeps notes in Neon. `NowOnTheGrid.MD` is specified and not started.
+`EmptyNotePruning.MD` is not scheduled.

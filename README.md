@@ -24,22 +24,26 @@ The domain model, including the parts still open, is in
 
 ## What it does so far
 
-A working wireframe you can read but not yet write to. Notes come from a seeded in-memory store,
-and the app is built around them: the day you are on and its neighbours scroll past under a
-toolbar, the view follows the clock and turns over at midnight by itself, and a calendar shows you
-which days have anything on them so you can jump to one. Slots are addressed by time throughout,
-and the editor opens on a slot rather than on a note.
+- **Sign in** through Auth0, and every note is yours alone.
+- **Write** a note in any slot, with Markdown, saved as you type.
+- **Browse by time:** the day you are on and its neighbours scroll past, the view follows the
+  clock and turns over at midnight, and a calendar marks the days that have notes.
+- **Pick the resolution:** slots of one, three or six hours, switched from the menu.
 
 ## The tech
 
 Two independent projects with no shared build, wired together in development only by the Vite dev
 proxy.
 
-**[API](TimelyNotes.Backend/) — .NET 10, FastEndpoints, xUnit v3.** REPR endpoints rather than MVC
-controllers, FluentValidation per request, and the repository pattern.
+**[API](TimelyNotes.Backend/) — .NET 10, FastEndpoints, EF Core on Postgres, xUnit v3.** REPR
+endpoints rather than MVC controllers, FluentValidation per request, and the repository pattern.
 
 **[UI](timely-notes-ui/) — React 19, TypeScript, Vite 8.** The time logic lives in a pure domain
-layer, unit tested with Vitest, acceptance tested with Playwright. Markdown editing is `@mdxeditor/editor`.
+layer, unit tested with Vitest, acceptance tested with Playwright. Markdown editing is
+`@mdxeditor/editor`; sign-in is OIDC with PKCE through `oidc-client-ts`.
+
+**Hosting.** The API on Azure App Service, the UI on Azure Static Web Apps, the database on
+Neon's free plan, and identity on Auth0.
 
 ## The development process
 
@@ -68,6 +72,10 @@ npm install
 Then, from the repository root:
 
 ```powershell
-./run-dev.ps1      # API on :5186 and UI on :5173 together; Ctrl+C stops both
+$env:Database__Provider = 'Memory'   # seeded in-memory notes; omit to use a local Postgres
+./run-dev.ps1                        # API on :5186 and UI on :5173 together; Ctrl+C stops both
 ```
 
+Signing in uses the project's Auth0 tenant, which already allows `http://localhost:5173`. For a
+local Postgres instead of the in-memory store, see
+[LocalPostgres.MD](feature-docs/done/LocalPostgres.MD).

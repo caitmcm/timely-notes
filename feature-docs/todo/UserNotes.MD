@@ -444,7 +444,7 @@ or with the CLI (decision 21).
   - [x] In `psql`: two `users` rows, and each note under the right `user_id`.
 - [ ] Deployed: sign in on the deployed UI; write and read a note. Deferred with section 10.
 - [ ] Audit the tenant with the `auth0` skill (decision 21). Fix each finding, or record it in
-      Implementation notes.
+      Implementation notes. Deferred with section 10: the tenant gains its production URLs then.
 
 ## Deferred
 

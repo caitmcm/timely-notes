@@ -158,5 +158,5 @@ both run the UI in `e2e` mode, with static auth. `stubbed` runs on `127.0.0.1:51
 signs in with a `dotnet user-jwts` token. `stubbed` has 15 tests and `integrated` 5. `App.test.tsx` and `NoteDialog.test.tsx` mock `NoteEditor` because MDXEditor emits no change
 events under jsdom; Playwright tests the real editor.
 
-**Next.** `UserNotes.MD` is built and tested; the `timely_notes_dev` reset and the
-by-hand Verify remain. Deployment (section 10) waits until that passes locally. `EmptyNotePruning.MD` is not scheduled.
+**Next.** `UserNotes.MD` is built, tested and verified locally against Postgres and
+Auth0. Deployment (section 10) and the tenant audit remain, deferred. `EmptyNotePruning.MD` is not scheduled.

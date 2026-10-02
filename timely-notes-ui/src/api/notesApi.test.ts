@@ -1,10 +1,14 @@
 import { deleteNote, getNoteDaysBySchedule, getNotesBySchedule, saveNote } from './notesApi'
+import type { TokenSource } from '../auth/useAuth'
 import { toDayKey } from '../domain/days'
 import { EITHER_SIDE_OF_GREENWICH, inTimezone } from '../test/timezone'
 
 /** The default window App sends: yesterday, to the day after tomorrow — half-open. */
 const searchFrom = toDayKey('2026-08-24')
 const searchTo = toDayKey('2026-08-27')
+
+/** A source whose token never changes; the auth tests at the end use their own. */
+const tokens = { token: async () => 'the-token', renew: async () => 'the-token' }
 
 const wireNote = (overrides: Record<string, unknown> = {}) => ({
   day: '2026-08-25',
@@ -40,7 +44,7 @@ describe('getNotesBySchedule', () => {
   it('requests the schedule notes route for the given short name', async () => {
     const fetchMock = stubFetch()
 
-    await getNotesBySchedule('s3', searchFrom, searchTo, new AbortController().signal)
+    await getNotesBySchedule(tokens, 's3', searchFrom, searchTo, new AbortController().signal)
 
     expect(calledUrl(fetchMock).parsed.pathname).toBe('/api/schedules/s3/notes')
   })
@@ -48,7 +52,7 @@ describe('getNotesBySchedule', () => {
   it('sends both bounds as the plain days it was given', async () => {
     const fetchMock = stubFetch()
 
-    await getNotesBySchedule('s3', searchFrom, searchTo, new AbortController().signal)
+    await getNotesBySchedule(tokens, 's3', searchFrom, searchTo, new AbortController().signal)
 
     const { searchParams } = calledUrl(fetchMock).parsed
     expect(searchParams.get('searchFrom')).toBe('2026-08-24')
@@ -58,7 +62,7 @@ describe('getNotesBySchedule', () => {
   it('leaves nothing in the query needing an escape', async () => {
     const fetchMock = stubFetch()
 
-    await getNotesBySchedule('s3', searchFrom, searchTo, new AbortController().signal)
+    await getNotesBySchedule(tokens, 's3', searchFrom, searchTo, new AbortController().signal)
 
     const { raw } = calledUrl(fetchMock)
     expect(raw.slice(raw.indexOf('?'))).not.toMatch(/%/)
@@ -68,12 +72,12 @@ describe('getNotesBySchedule', () => {
   it.each(EITHER_SIDE_OF_GREENWICH)('asks for the same URL in %s', async (zone) => {
     const fetchMock = stubFetch()
 
-    await getNotesBySchedule('s3', searchFrom, searchTo, new AbortController().signal)
+    await getNotesBySchedule(tokens, 's3', searchFrom, searchTo, new AbortController().signal)
     const here = calledUrl(fetchMock).raw
 
     let there = ''
     await inTimezone(zone, async () => {
-      await getNotesBySchedule('s3', searchFrom, searchTo, new AbortController().signal)
+      await getNotesBySchedule(tokens, 's3', searchFrom, searchTo, new AbortController().signal)
       there = fetchMock.mock.calls[1][0]
     })
 
@@ -84,7 +88,7 @@ describe('getNotesBySchedule', () => {
     const fetchMock = stubFetch()
     const { signal } = new AbortController()
 
-    await getNotesBySchedule('s1', searchFrom, searchTo, signal)
+    await getNotesBySchedule(tokens, 's1', searchFrom, searchTo, signal)
 
     expect(fetchMock.mock.calls[0][1]).toMatchObject({ signal })
   })
@@ -92,7 +96,7 @@ describe('getNotesBySchedule', () => {
   it('maps the payload to a note addressed by its day and period', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse([wireNote()])))
 
-    const notes = await getNotesBySchedule('s3', searchFrom, searchTo, new AbortController().signal)
+    const notes = await getNotesBySchedule(tokens, 's3', searchFrom, searchTo, new AbortController().signal)
 
     expect(notes).toHaveLength(1)
     expect(notes[0].ordinal).toBe(6)
@@ -106,6 +110,7 @@ describe('getNotesBySchedule', () => {
     let day = ''
     await inTimezone(zone, async () => {
       const [note] = await getNotesBySchedule(
+        tokens,
         's3',
         searchFrom,
         searchTo,
@@ -120,7 +125,7 @@ describe('getNotesBySchedule', () => {
   it('parses the audit stamps, which are the only instants left', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse([wireNote()])))
 
-    const [note] = await getNotesBySchedule('s3', searchFrom, searchTo, new AbortController().signal)
+    const [note] = await getNotesBySchedule(tokens, 's3', searchFrom, searchTo, new AbortController().signal)
 
     expect(note.createdAt).toBeInstanceOf(Date)
     expect(note.createdAt.toISOString()).toBe('2026-08-28T08:12:33.000Z')
@@ -131,7 +136,7 @@ describe('getNotesBySchedule', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse([wireNote({ day: '25/08/2026' })])))
 
     await expect(
-      getNotesBySchedule('s3', searchFrom, searchTo, new AbortController().signal),
+      getNotesBySchedule(tokens, 's3', searchFrom, searchTo, new AbortController().signal),
     ).rejects.toThrow(/day/i)
   })
 
@@ -142,7 +147,7 @@ describe('getNotesBySchedule', () => {
     )
 
     await expect(
-      getNotesBySchedule('s3', searchFrom, searchTo, new AbortController().signal),
+      getNotesBySchedule(tokens, 's3', searchFrom, searchTo, new AbortController().signal),
     ).rejects.toThrow(/500/)
   })
 })
@@ -158,7 +163,7 @@ describe('getNoteDaysBySchedule', () => {
   it('requests the note-days route for the given short name', async () => {
     const fetchMock = stubFetch()
 
-    await getNoteDaysBySchedule('s3', gridFrom, gridTo, new AbortController().signal)
+    await getNoteDaysBySchedule(tokens, 's3', gridFrom, gridTo, new AbortController().signal)
 
     expect(calledUrl(fetchMock).parsed.pathname).toBe('/api/schedules/s3/note-days')
   })
@@ -166,7 +171,7 @@ describe('getNoteDaysBySchedule', () => {
   it('sends both bounds as plain days, with nothing to escape', async () => {
     const fetchMock = stubFetch()
 
-    await getNoteDaysBySchedule('s1', gridFrom, gridTo, new AbortController().signal)
+    await getNoteDaysBySchedule(tokens, 's1', gridFrom, gridTo, new AbortController().signal)
 
     const { raw, parsed } = calledUrl(fetchMock)
     expect(parsed.searchParams.get('searchFrom')).toBe('2026-08-31')
@@ -177,7 +182,7 @@ describe('getNoteDaysBySchedule', () => {
   it('carries each day through verbatim', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse([{ day: '2026-09-03', count: 2 }])))
 
-    const days = await getNoteDaysBySchedule('s1', gridFrom, gridTo, new AbortController().signal)
+    const days = await getNoteDaysBySchedule(tokens, 's1', gridFrom, gridTo, new AbortController().signal)
 
     expect(days).toEqual([{ day: '2026-09-03', count: 2 }])
   })
@@ -186,7 +191,7 @@ describe('getNoteDaysBySchedule', () => {
     const fetchMock = stubFetch()
     const { signal } = new AbortController()
 
-    await getNoteDaysBySchedule('s1', gridFrom, gridTo, signal)
+    await getNoteDaysBySchedule(tokens, 's1', gridFrom, gridTo, signal)
 
     expect(fetchMock.mock.calls[0][1]).toMatchObject({ signal })
   })
@@ -198,7 +203,7 @@ describe('getNoteDaysBySchedule', () => {
     )
 
     await expect(
-      getNoteDaysBySchedule('s1', gridFrom, gridTo, new AbortController().signal),
+      getNoteDaysBySchedule(tokens, 's1', gridFrom, gridTo, new AbortController().signal),
     ).rejects.toThrow(/500/)
   })
 })
@@ -216,7 +221,7 @@ describe('the API origin', () => {
     vi.stubEnv('VITE_API_BASE_URL', undefined)
     const fetchMock = stubFetch()
 
-    await getNotesBySchedule('s3', searchFrom, searchTo, new AbortController().signal)
+    await getNotesBySchedule(tokens, 's3', searchFrom, searchTo, new AbortController().signal)
 
     expect(calledUrl(fetchMock).raw).toMatch(/^\/api\//)
   })
@@ -225,7 +230,7 @@ describe('the API origin', () => {
     vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.net')
     const fetchMock = stubFetch()
 
-    await getNotesBySchedule('s3', searchFrom, searchTo, new AbortController().signal)
+    await getNotesBySchedule(tokens, 's3', searchFrom, searchTo, new AbortController().signal)
 
     const { parsed } = calledUrl(fetchMock)
     expect(parsed.origin).toBe('https://api.example.net')
@@ -236,7 +241,7 @@ describe('the API origin', () => {
     vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.net')
     const fetchMock = stubFetch()
 
-    await getNoteDaysBySchedule('s1', gridFrom, gridTo, new AbortController().signal)
+    await getNoteDaysBySchedule(tokens, 's1', gridFrom, gridTo, new AbortController().signal)
 
     const { parsed } = calledUrl(fetchMock)
     expect(parsed.origin).toBe('https://api.example.net')
@@ -248,7 +253,7 @@ describe('the API origin', () => {
     vi.stubEnv('VITE_API_BASE_URL', 'https://api.example.net/')
     const fetchMock = stubFetch()
 
-    await getNotesBySchedule('s3', searchFrom, searchTo, new AbortController().signal)
+    await getNotesBySchedule(tokens, 's3', searchFrom, searchTo, new AbortController().signal)
 
     expect(calledUrl(fetchMock).parsed.pathname).toBe('/api/schedules/s3/notes')
   })
@@ -275,7 +280,7 @@ describe('saveNote', () => {
   it('PUTs to the period the note is addressed by', async () => {
     const fetchMock = stubSave()
 
-    await saveNote('s3', day, 4, 'Written.', new AbortController().signal)
+    await saveNote(tokens, 's3', day, 4, 'Written.', new AbortController().signal)
 
     const { parsed } = calledUrl(fetchMock)
     // Structural, so the assertion holds in any timezone: nothing here depends on an offset.
@@ -290,7 +295,7 @@ describe('saveNote', () => {
   it('leaves the path needing no escape, and gives it none', async () => {
     const fetchMock = stubSave()
 
-    await saveNote('s3', day, 4, 'Written.', new AbortController().signal)
+    await saveNote(tokens, 's3', day, 4, 'Written.', new AbortController().signal)
 
     expect(calledUrl(fetchMock).raw).not.toMatch(/%/)
   })
@@ -299,12 +304,12 @@ describe('saveNote', () => {
   it.each(EITHER_SIDE_OF_GREENWICH)('PUTs to the identical URL in %s', async (zone) => {
     const fetchMock = stubSave()
 
-    await saveNote('s3', day, 4, 'Written.', new AbortController().signal)
+    await saveNote(tokens, 's3', day, 4, 'Written.', new AbortController().signal)
     const here = calledUrl(fetchMock).raw
 
     let there = ''
     await inTimezone(zone, async () => {
-      await saveNote('s3', day, 4, 'Written.', new AbortController().signal)
+      await saveNote(tokens, 's3', day, 4, 'Written.', new AbortController().signal)
       there = fetchMock.mock.calls[1][0]
     })
 
@@ -314,7 +319,7 @@ describe('saveNote', () => {
   it('sends a body carrying content and nothing else', async () => {
     const fetchMock = stubSave()
 
-    await saveNote('s3', day, 4, 'Written.', new AbortController().signal)
+    await saveNote(tokens, 's3', day, 4, 'Written.', new AbortController().signal)
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body)
     expect(body).toEqual({ content: 'Written.' })
@@ -323,7 +328,7 @@ describe('saveNote', () => {
   it('sends empty content as content, not as an omission', async () => {
     const fetchMock = stubSave()
 
-    await saveNote('s3', day, 4, '', new AbortController().signal)
+    await saveNote(tokens, 's3', day, 4, '', new AbortController().signal)
 
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ content: '' })
   })
@@ -332,7 +337,7 @@ describe('saveNote', () => {
     const fetchMock = stubSave()
     const { signal } = new AbortController()
 
-    await saveNote('s3', day, 4, 'Written.', signal)
+    await saveNote(tokens, 's3', day, 4, 'Written.', signal)
 
     expect(fetchMock.mock.calls[0][1]).toMatchObject({ signal })
   })
@@ -344,7 +349,7 @@ describe('saveNote', () => {
   ])('parses a %s response the same way', async (_outcome, respond) => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(respond(wireNote({ periodOrdinal: 4 }))))
 
-    const note = await saveNote('s3', day, 4, 'Written.', new AbortController().signal)
+    const note = await saveNote(tokens, 's3', day, 4, 'Written.', new AbortController().signal)
 
     expect(note.day).toBe('2026-08-25')
     expect(note.ordinal).toBe(4)
@@ -358,7 +363,7 @@ describe('saveNote', () => {
     )
 
     await expect(
-      saveNote('s3', day, 4, 'Written.', new AbortController().signal),
+      saveNote(tokens, 's3', day, 4, 'Written.', new AbortController().signal),
     ).rejects.toThrow(/500/)
   })
 })
@@ -383,7 +388,7 @@ describe('deleteNote', () => {
   it('DELETEs the period, with no body', async () => {
     const fetchMock = stubDelete()
 
-    await deleteNote('s3', day, 4)
+    await deleteNote(tokens, 's3', day, 4)
 
     const segments = calledUrl(fetchMock).parsed.pathname.split('/')
     expect(segments[5]).toBe(day)
@@ -395,26 +400,26 @@ describe('deleteNote', () => {
   it('resolves on 204', async () => {
     stubDelete()
 
-    await expect(deleteNote('s3', day, 4)).resolves.toBeUndefined()
+    await expect(deleteNote(tokens, 's3', day, 4)).resolves.toBeUndefined()
   })
 
   // It is already gone, which is the outcome asked for.
   it('treats a 404 as success', async () => {
     stubDelete(notFound())
 
-    await expect(deleteNote('s3', day, 4)).resolves.toBeUndefined()
+    await expect(deleteNote(tokens, 's3', day, 4)).resolves.toBeUndefined()
   })
 
   it('rejects on any other failure', async () => {
     stubDelete({ ok: false, status: 500 } as Response)
 
-    await expect(deleteNote('s3', day, 4)).rejects.toThrow(/500/)
+    await expect(deleteNote(tokens, 's3', day, 4)).rejects.toThrow(/500/)
   })
 
   it('is callable with no signal at all', async () => {
     const fetchMock = stubDelete()
 
-    await deleteNote('s3', day, 4)
+    await deleteNote(tokens, 's3', day, 4)
 
     expect(fetchMock.mock.calls[0][1].signal).toBeUndefined()
   })
@@ -423,8 +428,126 @@ describe('deleteNote', () => {
     const fetchMock = stubDelete()
     const { signal } = new AbortController()
 
-    await deleteNote('s3', day, 4, signal)
+    await deleteNote(tokens, 's3', day, 4, signal)
 
     expect(fetchMock.mock.calls[0][1]).toMatchObject({ signal })
+  })
+})
+
+describe('authentication', () => {
+  const day = toDayKey('2026-08-25')
+
+  const unauthorized = () => ({ ok: false, status: 401 }) as Response
+  const created = () => ({ ok: true, status: 201, json: async () => wireNote() }) as Response
+  const noContent = () => ({ ok: true, status: 204 }) as Response
+
+  /** Each call, run against a stubbed fetch; `ok` is the response a success would get. */
+  const calls = [
+    {
+      name: 'getNotesBySchedule',
+      ok: () => okResponse([]),
+      run: (source: TokenSource) =>
+        getNotesBySchedule(source, 's3', searchFrom, searchTo, new AbortController().signal),
+    },
+    {
+      name: 'getNoteDaysBySchedule',
+      ok: () => okResponse([]),
+      run: (source: TokenSource) =>
+        getNoteDaysBySchedule(source, 's3', searchFrom, searchTo, new AbortController().signal),
+    },
+    {
+      name: 'saveNote',
+      ok: created,
+      run: (source: TokenSource) =>
+        saveNote(source, 's3', day, 4, 'Written.', new AbortController().signal),
+    },
+    {
+      name: 'deleteNote',
+      ok: noContent,
+      run: (source: TokenSource) => deleteNote(source, 's3', day, 4),
+    },
+  ]
+
+  const authorizationOf = (fetchMock: ReturnType<typeof vi.fn>, call: number) =>
+    new Headers(fetchMock.mock.calls[call][1].headers).get('Authorization')
+
+  const countingSource = () => {
+    const source = {
+      token: vi.fn(async () => 'stale-token'),
+      renew: vi.fn(async () => 'fresh-token'),
+    }
+
+    return source
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it.each(calls)('$name sends the token as a bearer credential', async ({ ok, run }) => {
+    const fetchMock = vi.fn().mockResolvedValue(ok())
+    vi.stubGlobal('fetch', fetchMock)
+
+    await run(tokens)
+
+    expect(authorizationOf(fetchMock, 0)).toBe('Bearer the-token')
+  })
+
+  it.each(calls)('$name renews once on a 401 and retries with the new token', async ({ ok, run }) => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(unauthorized()).mockResolvedValueOnce(ok())
+    vi.stubGlobal('fetch', fetchMock)
+    const source = countingSource()
+
+    await run(source)
+
+    expect(source.renew).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(authorizationOf(fetchMock, 0)).toBe('Bearer stale-token')
+    expect(authorizationOf(fetchMock, 1)).toBe('Bearer fresh-token')
+  })
+
+  it.each(calls)('$name throws on a second 401, without renewing again', async ({ run }) => {
+    const fetchMock = vi.fn().mockResolvedValue(unauthorized())
+    vi.stubGlobal('fetch', fetchMock)
+    const source = countingSource()
+
+    await expect(run(source)).rejects.toThrow(/401/)
+    expect(source.renew).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it.each(calls)('$name does not renew on any other failure', async ({ run }) => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 500 } as Response)
+    vi.stubGlobal('fetch', fetchMock)
+    const source = countingSource()
+
+    await expect(run(source)).rejects.toThrow(/500/)
+    expect(source.renew).not.toHaveBeenCalled()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(calls)('$name rejects when renewal fails, without retrying', async ({ run }) => {
+    const fetchMock = vi.fn().mockResolvedValue(unauthorized())
+    vi.stubGlobal('fetch', fetchMock)
+    const source = {
+      token: async () => 'stale-token',
+      renew: async () => {
+        throw new Error('login_required')
+      },
+    }
+
+    await expect(run(source)).rejects.toThrow()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('saveNote keeps its content type beside the credential', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(created())
+    vi.stubGlobal('fetch', fetchMock)
+
+    await saveNote(tokens, 's3', day, 4, 'Written.', new AbortController().signal)
+
+    expect(new Headers(fetchMock.mock.calls[0][1].headers).get('Content-Type')).toBe(
+      'application/json',
+    )
   })
 })

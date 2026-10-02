@@ -10,7 +10,6 @@ public class UpsertNoteEndpoint(INoteRepository notes, TimeProvider clock)
     public override void Configure()
     {
         Put("api/schedules/{schedule}/notes/{day}/{period}");
-        AllowAnonymous();
         Summary(s =>
         {
             s.Summary = "Writes the note in a period, creating it if that period holds none.";
@@ -36,6 +35,7 @@ public class UpsertNoteEndpoint(INoteRepository notes, TimeProvider clock)
         var result = await notes.Upsert(
             new Note
             {
+                UserId = req.UserId,
                 ScheduleSpanHours = req.ScheduleSpanHours,
                 Day = req.Day!.Value,
                 PeriodOrdinal = req.PeriodOrdinal,

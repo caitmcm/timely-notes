@@ -8,10 +8,19 @@ const renderDrawer = (overrides: Partial<Props> = {}) => {
   const handlers = {
     onChangeSchedule: vi.fn(),
     onClose: vi.fn(),
+    onSignOut: vi.fn(),
   }
   const showModal = vi.spyOn(HTMLDialogElement.prototype, 'showModal')
 
-  const view = render(<MenuDrawer isOpen selected="s3" {...handlers} {...overrides} />)
+  const view = render(
+    <MenuDrawer
+      isOpen
+      selected="s3"
+      email="alice@example.com"
+      {...handlers}
+      {...overrides}
+    />,
+  )
 
   return { ...view, ...handlers, showModal }
 }
@@ -86,5 +95,26 @@ describe('MenuDrawer', () => {
     fireEvent(screen.getByRole('dialog'), new Event('cancel'))
 
     expect(onClose).toHaveBeenCalled()
+  })
+
+  it('says who is signed in', () => {
+    renderDrawer()
+
+    expect(screen.getByText('Signed in as alice@example.com')).toBeInTheDocument()
+  })
+
+  it('leaves out the line when the session carries no email address', () => {
+    renderDrawer({ email: null })
+
+    expect(screen.queryByText(/Signed in as/)).not.toBeInTheDocument()
+  })
+
+  it('asks to sign out rather than signing out itself', async () => {
+    const user = userEvent.setup()
+    const { onSignOut } = renderDrawer()
+
+    await user.click(screen.getByRole('button', { name: 'Sign out' }))
+
+    expect(onSignOut).toHaveBeenCalledTimes(1)
   })
 })

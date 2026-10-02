@@ -11,35 +11,39 @@ public static class NoteQueries
 {
     public static IQueryable<Note> Notes(
         NotesDbContext db,
+        Guid userId,
         int scheduleSpanHours,
         DateOnly searchFrom,
         DateOnly searchTo) =>
-        InRange(db, scheduleSpanHours, searchFrom, searchTo)
+        InRange(db, userId, scheduleSpanHours, searchFrom, searchTo)
             .OrderByDescending(note => note.Day)
             .ThenByDescending(note => note.PeriodOrdinal);
 
     public static IQueryable<NoteDayCount> DayCounts(
         NotesDbContext db,
+        Guid userId,
         int scheduleSpanHours,
         DateOnly searchFrom,
         DateOnly searchTo) =>
-        InRange(db, scheduleSpanHours, searchFrom, searchTo)
+        InRange(db, userId, scheduleSpanHours, searchFrom, searchTo)
             .GroupBy(note => note.Day)
             .OrderBy(day => day.Key)
             .Select(day => new NoteDayCount(day.Key, day.Count()));
 
     /// <summary>
-    /// Schedule, half-open day range, and readable content. The emptiness test is spelled
-    /// <c>!= ""</c> rather than through <see cref="NoteContent.IsReadable"/>, which cannot be
+    /// The user, the Schedule, the half-open day range, and readable content. The emptiness test is
+    /// spelled <c>!= ""</c> rather than through <see cref="NoteContent.IsReadable"/>, which cannot be
     /// translated; normalising on write is what keeps the two the same predicate.
     /// </summary>
     private static IQueryable<Note> InRange(
         NotesDbContext db,
+        Guid userId,
         int scheduleSpanHours,
         DateOnly searchFrom,
         DateOnly searchTo) =>
         db.Notes
             .AsNoTracking()
+            .Where(note => note.UserId == userId)
             .Where(note => note.ScheduleSpanHours == scheduleSpanHours)
             .Where(note => note.Day >= searchFrom && note.Day < searchTo)
             .Where(note => note.Content != "");

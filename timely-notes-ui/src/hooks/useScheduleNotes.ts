@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getNotesBySchedule } from '../api/notesApi'
 import { addDays, chunkRun, contiguousRuns, eachDay } from '../domain/days'
 import { isBlank } from '../domain/notes'
+import type { TokenSource } from '../auth/useAuth'
 import type { DayKey, Note, Schedule, ScheduleShortName } from '../types'
 
 /** Days per request: inside the server's 7-day maximum, with room for a rounding mistake. */
@@ -44,6 +45,7 @@ function bucketByDay(days: DayKey[], notes: Note[]): Map<DayKey, Note[]> {
  * the server's cap.
  */
 export function useScheduleNotes(
+  tokens: TokenSource,
   schedule: Schedule,
   wantFrom: DayKey,
   wantTo: DayKey,
@@ -87,7 +89,7 @@ export function useScheduleNotes(
         // Half-open, so the window ends the day after the last one wanted.
         const searchTo = addDays(chunk[chunk.length - 1], 1)
 
-        getNotesBySchedule(shortName, chunk[0], searchTo, inFlight)
+        getNotesBySchedule(tokens, shortName, chunk[0], searchTo, inFlight)
           .then((notes) => {
             if (current.current !== shortName) {
               return
@@ -113,7 +115,7 @@ export function useScheduleNotes(
           })
       }
     }
-  }, [schedule, wantFrom, wantTo])
+  }, [tokens, schedule, wantFrom, wantTo])
 
   const days = cache.shortName === schedule.shortName ? cache.days : NO_DAYS
 

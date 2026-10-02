@@ -12,8 +12,16 @@ public class NoteQueriesTests
     private static readonly DateOnly From = new(2026, 8, 24);
     private static readonly DateOnly To = new(2026, 8, 31);
 
+    private static readonly Guid User = Guid.CreateVersion7();
+
     public class TheNotesQuery
     {
+        [Fact]
+        public void FiltersOnTheUser()
+        {
+            Assert.Contains("n.user_id = @", Sql());
+        }
+
         [Fact]
         public void FiltersOnTheSchedule()
         {
@@ -45,11 +53,17 @@ public class NoteQueriesTests
         }
 
         private static string Sql() =>
-            NoteQueries.Notes(NotesDbContextFixture.Context(), 3, From, To).ToQueryString();
+            NoteQueries.Notes(NotesDbContextFixture.Context(), User, 3, From, To).ToQueryString();
     }
 
     public class TheDayCountsQuery
     {
+        [Fact]
+        public void FiltersOnTheUser()
+        {
+            Assert.Contains("n.user_id = @", Sql());
+        }
+
         [Fact]
         public void GroupsByDayInSql()
         {
@@ -89,6 +103,6 @@ public class NoteQueriesTests
         }
 
         private static string Sql() =>
-            NoteQueries.DayCounts(NotesDbContextFixture.Context(), 3, From, To).ToQueryString();
+            NoteQueries.DayCounts(NotesDbContextFixture.Context(), User, 3, From, To).ToQueryString();
     }
 }

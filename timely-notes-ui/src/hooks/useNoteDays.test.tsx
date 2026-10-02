@@ -5,6 +5,9 @@ import { SCHEDULES } from '../domain/schedules'
 import type { DayKey, Schedule } from '../types'
 import { useNoteDays } from './useNoteDays'
 
+/** Never renewed here: the retry on 401 is notesApi's, and tested there. */
+const tokens = { token: async () => 'the-token', renew: async () => 'the-token' }
+
 const s1 = SCHEDULES[0]
 const s3 = SCHEDULES[1]
 
@@ -84,7 +87,7 @@ interface ProbeProps {
 
 function Probe({ schedule, grid, enabled }: ProbeProps) {
   const { from, to } = gridBounds(grid)
-  const { countFor, isLoading, error } = useNoteDays(schedule, from, to, enabled)
+  const { countFor, isLoading, error } = useNoteDays(tokens, schedule, from, to, enabled)
 
   return (
     <ul data-testid="grid" data-loading={isLoading}>

@@ -6,6 +6,20 @@ namespace TimelyNotes.API.Tests.Repositories;
 
 public class NoteStoreRegistrationTests
 {
+    [Theory]
+    [InlineData("Memory", typeof(InMemoryUserRepository))]
+    [InlineData("Postgres", typeof(PostgresUserRepository))]
+    [InlineData(null, typeof(InMemoryUserRepository))]
+    public void TheUserStoreFollowsTheNoteStore(string? provider, Type expected)
+    {
+        var services = new ServiceCollection().AddSingleton(TimeProvider.System);
+        services.AddNoteStore(Configuration(provider));
+
+        var users = services.BuildServiceProvider().GetRequiredService<IUserRepository>();
+
+        Assert.IsType(expected, users);
+    }
+
     [Fact]
     public void MemoryResolvesTheInMemoryStore()
     {
@@ -16,13 +30,13 @@ public class NoteStoreRegistrationTests
     }
 
     [Fact]
-    public async Task MemoryResolvesAStoreThatIsAlreadySeeded()
+    public async Task MemoryResolvesAStoreThatSeedsEachUser()
     {
         var (_, repository) = Register("Memory");
         var today = DateOnly.FromDateTime(DateTime.Today);
 
         var notes = await repository.GetBySchedule(
-            1, today.AddDays(-3), today.AddDays(4), TestContext.Current.CancellationToken);
+            Guid.CreateVersion7(), 1, today.AddDays(-3), today.AddDays(4), TestContext.Current.CancellationToken);
 
         Assert.NotEmpty(notes);
     }

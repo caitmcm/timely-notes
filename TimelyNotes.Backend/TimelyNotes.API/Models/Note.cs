@@ -1,12 +1,15 @@
 namespace TimelyNotes.API.Models;
 
 /// <summary>
-/// One note, addressed by the period it sits in. <see cref="ScheduleSpanHours"/>,
-/// <see cref="Day"/> and <see cref="PeriodOrdinal"/> together are the key: a period holds at most
-/// one note, and there is no surrogate id to address it by instead.
+/// One note, addressed by its writer and the period it sits in. <see cref="UserId"/>,
+/// <see cref="ScheduleSpanHours"/>, <see cref="Day"/> and <see cref="PeriodOrdinal"/> together are
+/// the key: a period holds at most one note per user, and there is no surrogate id.
 /// </summary>
 public class Note
 {
+    /// <summary>The writer, from the token. Never on the wire.</summary>
+    public required Guid UserId { get; init; }
+
     /// <summary>The Schedule, which <em>is</em> its span: 1, 3 or 6. <c>s3</c> on the wire.</summary>
     public required int ScheduleSpanHours { get; init; }
 

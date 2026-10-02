@@ -10,6 +10,7 @@ import { expect, integratedTest as test } from './fixtures/app'
  */
 
 const NOTES_ROUTE = /\/api\/schedules\/\w+\/notes\?/
+const S3_NOTES_ROUTE = /\/api\/schedules\/s3\/notes\?/
 const NOTE_DAYS_ROUTE = /\/api\/schedules\/\w+\/note-days\?/
 /** A write, which is addressed by the period rather than by a query. */
 const WRITE_ROUTE = /\/api\/schedules\/\w+\/notes\/[\d-]+\/p\d+$/
@@ -68,6 +69,8 @@ test.describe('@integrated', () => {
     await scheduleView.open()
 
     const day = scheduleView.day(headingFor(frozenAt))
+    // Loaded first: the dialog opens on an address, and an unloaded day's address holds nothing.
+    await expect(day.row('09:00 – 12:00')).toContainText('Morning block')
     await day.row('09:00 – 12:00').click()
     await day.noteButton.click()
 
@@ -101,7 +104,7 @@ test.describe('@integrated', () => {
    * so a rerun against a still-running API starts from nothing either way — and the note is deleted
    * again at the end, which is the second half of what is being asserted.
    */
-  test('writes a real note through the real API, reads it back, and deletes it', async ({
+  test('writes a real note as the minted user, reads it back from the API, and deletes it', async ({
     frozenAt,
     page,
     scheduleView,
@@ -125,7 +128,19 @@ test.describe('@integrated', () => {
     await scheduleView.done.click()
     await expect(day.row('21:00 – 00:00')).toContainText('Written against the real API.')
 
-    // And back out again: clearing it writes it empty, and closing deletes the record.
+    // That row is App's cache. Switching Schedule and back drops it, so this read is the server's,
+    // answering the minted token's user with the note that user wrote.
+    await scheduleView.openMenu()
+    await scheduleView.schedule('1h').click()
+    const reread = page.waitForResponse((response) => S3_NOTES_ROUTE.test(response.url()))
+    await scheduleView.openMenu()
+    await scheduleView.schedule('3h').click()
+    expect((await reread).status()).toBe(200)
+    await expect(day.row('21:00 – 00:00')).toContainText('Written against the real API.')
+
+    // And back out again: clearing it writes it empty, and closing deletes the record. Reselected,
+    // because a Schedule switch moves the selection to the current period.
+    await day.row('21:00 – 00:00').click()
     await day.noteButton.click()
     const deleted = page.waitForResponse(
       (response) => WRITE_ROUTE.test(response.url()) && response.request().method() === 'DELETE',

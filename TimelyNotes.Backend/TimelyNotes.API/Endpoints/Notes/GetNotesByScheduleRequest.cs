@@ -1,9 +1,15 @@
+using FastEndpoints;
+using TimelyNotes.API.Auth;
 using TimelyNotes.API.Models;
 
 namespace TimelyNotes.API.Endpoints.Notes;
 
 public class GetNotesByScheduleRequest
 {
+    /// <summary>The caller, from the token. Never on the wire.</summary>
+    [FromClaim(UserClaims.Id)]
+    public Guid UserId { get; set; }
+
     /// <summary><c>s1</c>, <c>s3</c> or <c>s6</c> — the Schedule's span in hours, with its sigil.</summary>
     public required string Schedule { get; set; }
 

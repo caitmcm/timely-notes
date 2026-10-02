@@ -1,8 +1,11 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import type { ReactNode } from 'react'
 import { toDayKey } from './domain/days'
 import type { DayKey } from './types'
 import App from './App'
+import { StaticAuthProvider } from './auth/StaticAuth'
+import { AuthContext, type Auth } from './auth/useAuth'
 
 // MDXEditor emits no change event under jsdom, so typing into it here could never reach autosave.
 // It stands in as a plain textbox; its real behaviour is asserted in the Playwright lane.
@@ -92,7 +95,12 @@ const write = async (markdown: string) => {
   })
 }
 
-const renderApp = () => render(<App now={now} />)
+/** Every render is signed in; the token is what each request should carry. */
+const SignedIn = ({ children }: { children: ReactNode }) => (
+  <StaticAuthProvider token="app-token">{children}</StaticAuthProvider>
+)
+
+const renderApp = () => render(<App now={now} />, { wrapper: SignedIn })
 
 /** The URLs fetch was called with, parsed. */
 const requests = (fetchMock: ReturnType<typeof stubFetch>) =>
@@ -416,7 +424,7 @@ describe('App — live clock', () => {
   const mountAt = async (startAt: Date) => {
     vi.setSystemTime(startAt)
     const fetchMock = stubFetch()
-    render(<App />)
+    render(<App />, { wrapper: SignedIn })
     await act(async () => {})
 
     return fetchMock
@@ -521,7 +529,7 @@ describe('App — live clock', () => {
   it('opens the new day’s first period from Note now after midnight, not the row left behind', async () => {
     vi.setSystemTime(onThe25th(23, 59))
     stubFetch({ s3: [wireNote(august(26), 1, 'Just past midnight.')] })
-    render(<App />)
+    render(<App />, { wrapper: SignedIn })
     await act(async () => {})
     await click(row(25, '06:00 – 09:00'))
 
@@ -1320,5 +1328,72 @@ describe('App — the window and the selection', () => {
 
     expect(headings()).toEqual(threeDays)
     expect(writes(fetchMock)).toEqual(['PUT 2026-08-26/p3'])
+  })
+})
+
+describe('App, signed in', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('sends the session’s token on every request: reads, calendar, writes and the delete', async () => {
+    const fetchMock = stubFetch()
+    renderApp()
+    await screen.findByText(/Morning block/)
+    await userEvent.click(row(25, '09:00 – 12:00'))
+    await userEvent.click(screen.getByRole('button', { name: 'Note' }))
+    await write('')
+    await userEvent.click(screen.getByRole('button', { name: 'Done' }))
+    await waitFor(() =>
+      expect(writes(fetchMock)).toEqual(['PUT 2026-08-25/p4', 'DELETE 2026-08-25/p4']),
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: 'Calendar' }))
+    await waitFor(() =>
+      expect(requests(fetchMock).some((url) => url.pathname.endsWith('/note-days'))).toBe(true),
+    )
+
+    const authorizations = fetchMock.mock.calls.map(([, init]) =>
+      new Headers(init?.headers).get('Authorization'),
+    )
+    expect(authorizations.length).toBeGreaterThanOrEqual(4)
+    expect(new Set(authorizations)).toEqual(new Set(['Bearer app-token']))
+  })
+
+  it('holds the dialog open on its save error when the session cannot be renewed', async () => {
+    const fetchMock = stubFetch()
+    const reads = fetchMock.getMockImplementation()!
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) =>
+      init?.method === 'PUT' ? ({ ok: false, status: 401 } as Response) : reads(url, init),
+    )
+    const expired: Auth = {
+      status: 'signedIn',
+      email: null,
+      tokens: {
+        token: async () => 'expired-token',
+        renew: async () => {
+          throw new Error('login_required')
+        },
+      },
+      signIn: async () => {},
+      signUp: async () => {},
+      signOut: async () => {},
+    }
+    render(<App now={now} />, {
+      wrapper: ({ children }) => (
+        <AuthContext.Provider value={expired}>{children}</AuthContext.Provider>
+      ),
+    })
+    await screen.findByRole('option', { selected: true })
+    await userEvent.click(screen.getByRole('button', { name: 'Note' }))
+
+    await write('Not lost.')
+    await userEvent.click(screen.getByRole('button', { name: 'Done' }))
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Note' })).toHaveValue('Not lost.')
+    expect(within(screen.getByRole('dialog')).getByRole('status')).toHaveTextContent(
+      'Not saved — retrying',
+    )
   })
 })

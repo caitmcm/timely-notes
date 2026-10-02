@@ -32,4 +32,8 @@ test('reads and writes that zone’s own days, by plain dates and no offset', as
 
   await expect.poll(() => api.writes.length).toBe(1)
   expect(new URL(api.writes[0].url).pathname).toBe('/api/schedules/s3/notes/2026-08-25/p4')
+
+  // The built bundle's static auth, from `.env.e2e`: every read and write carries its token.
+  expect(api.authorizations.length).toBeGreaterThanOrEqual(2)
+  expect(new Set(api.authorizations)).toEqual(new Set(['Bearer e2e-stubbed-token']))
 })

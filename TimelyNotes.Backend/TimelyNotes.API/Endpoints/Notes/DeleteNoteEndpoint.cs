@@ -8,7 +8,6 @@ public class DeleteNoteEndpoint(INoteRepository notes) : Endpoint<DeleteNoteRequ
     public override void Configure()
     {
         Delete("api/schedules/{schedule}/notes/{day}/{period}");
-        AllowAnonymous();
         Summary(s =>
         {
             s.Summary = "Removes the note in a period.";
@@ -22,7 +21,7 @@ public class DeleteNoteEndpoint(INoteRepository notes) : Endpoint<DeleteNoteRequ
     {
         // The Schedule parses and the ordinal is in range: the validator runs first.
         var deleted = await notes.Delete(
-            req.ScheduleSpanHours, req.Day!.Value, req.PeriodOrdinal, ct);
+            req.UserId, req.ScheduleSpanHours, req.Day!.Value, req.PeriodOrdinal, ct);
 
         if (!deleted)
         {

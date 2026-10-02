@@ -12,35 +12,126 @@ public class InMemoryNoteRepositoryTests
     /// <summary>Wider than the seed, either side.</summary>
     private static (DateOnly From, DateOnly To) WholeSeed => (Day(-4), Day(4));
 
+    private static readonly Guid Alice = Guid.CreateVersion7();
+
+    private static readonly Guid Bob = Guid.CreateVersion7();
+
     [Fact]
-    public async Task ANewRepository_HoldsNothingUntilItIsSeeded()
+    public async Task WithSeedingOff_ANewUsersStoreIsEmpty()
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = new InMemoryNoteRepository(seedEachUser: false);
 
         Assert.Empty(await AllSeeded(repository));
     }
 
     [Fact]
-    public async Task Seed_FillsTheStore()
+    public async Task WithSeedingOn_AUsersFirstReadReturnsTheSeed()
     {
-        var repository = new InMemoryNoteRepository();
-
-        repository.Seed();
+        var repository = new InMemoryNoteRepository(seedEachUser: true);
 
         Assert.NotEmpty(await AllSeeded(repository));
     }
 
-    /// <summary>A period holds one note, so a second call must not double the fixtures.</summary>
+    /// <summary>A period holds one note, so a second touch must not double the fixtures.</summary>
     [Fact]
-    public async Task Seed_Twice_LeavesTheSameNotes()
+    public async Task WithSeedingOn_AUserIsSeededOnce()
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = SeededRepository();
 
-        repository.Seed();
         var once = (await AllSeeded(repository)).Count;
-        repository.Seed();
 
         Assert.Equal(once, (await AllSeeded(repository)).Count);
+    }
+
+    [Fact]
+    public async Task WithSeedingOn_ASecondUserGetsTheirOwnCopy()
+    {
+        var repository = SeededRepository();
+        var alices = await AllSeeded(repository, Alice);
+        await repository.Delete(
+            Alice, alices[0].ScheduleSpanHours, alices[0].Day, alices[0].PeriodOrdinal,
+            TestContext.Current.CancellationToken);
+
+        var bobs = await AllSeeded(repository, Bob);
+
+        Assert.Equal(alices.Count, bobs.Count);
+        Assert.All(bobs, note => Assert.Equal(Bob, note.UserId));
+        Assert.Equal(alices.Count - 1, (await AllSeeded(repository, Alice)).Count);
+    }
+
+    /// <summary>Seeded before the write, so the write is not overwritten by a late seed.</summary>
+    [Fact]
+    public async Task WithSeedingOn_AUsersFirstTouchBeingAWriteStillSeedsUnderIt()
+    {
+        var repository = SeededRepository();
+
+        await repository.Upsert(
+            NoteAt(1, Today, 10, "Mine.", user: Bob), TestContext.Current.CancellationToken);
+
+        var today = await repository.GetBySchedule(
+            Bob, 1, Today, Day(1), TestContext.Current.CancellationToken);
+        Assert.Equal(2, today.Count);
+        Assert.Equal("Mine.", Assert.Single(today, note => note.PeriodOrdinal == 10).Content);
+    }
+
+    // --- Tenancy ------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task TwoUsersUpsertingTheSameAddress_HoldTwoNotes_AndEachReadsOnlyTheirOwn()
+    {
+        var repository = new InMemoryNoteRepository(seedEachUser: false);
+
+        var alices = await repository.Upsert(
+            NoteAt(3, WriteDay, 4, "Alice's.", user: Alice), TestContext.Current.CancellationToken);
+        var bobs = await repository.Upsert(
+            NoteAt(3, WriteDay, 4, "Bob's.", user: Bob), TestContext.Current.CancellationToken);
+
+        Assert.True(alices.Created);
+        Assert.True(bobs.Created);
+        Assert.Equal("Alice's.", Assert.Single(await NotesAround(repository, 3, WriteDay, Alice)).Content);
+        Assert.Equal("Bob's.", Assert.Single(await NotesAround(repository, 3, WriteDay, Bob)).Content);
+    }
+
+    [Fact]
+    public async Task Upsert_StampsTheWritersUserIdOnTheNote()
+    {
+        var repository = new InMemoryNoteRepository(seedEachUser: false);
+
+        var result = await repository.Upsert(
+            NoteAt(3, WriteDay, 4, "Bob's.", user: Bob), TestContext.Current.CancellationToken);
+
+        Assert.Equal(Bob, result.Note.UserId);
+        Assert.Equal(Bob, Assert.Single(await NotesAround(repository, 3, WriteDay, Bob)).UserId);
+    }
+
+    [Fact]
+    public async Task Delete_OfAnAddressOnlyAnotherUserHolds_ReportsFalseAndLeavesTheirNote()
+    {
+        var repository = new InMemoryNoteRepository(seedEachUser: false);
+        await repository.Upsert(
+            NoteAt(3, WriteDay, 4, "Alice's.", user: Alice), TestContext.Current.CancellationToken);
+
+        var deleted = await repository.Delete(Bob, 3, WriteDay, 4, TestContext.Current.CancellationToken);
+
+        Assert.False(deleted);
+        Assert.Equal("Alice's.", Assert.Single(await NotesAround(repository, 3, WriteDay, Alice)).Content);
+    }
+
+    [Fact]
+    public async Task GetDayCountsBySchedule_CountsOnlyTheCallersNotes()
+    {
+        var repository = new InMemoryNoteRepository(seedEachUser: false);
+        await repository.Upsert(
+            NoteAt(3, WriteDay, 4, "Alice's.", user: Alice), TestContext.Current.CancellationToken);
+        await repository.Upsert(
+            NoteAt(3, WriteDay, 5, "Alice's too.", user: Alice), TestContext.Current.CancellationToken);
+        await repository.Upsert(
+            NoteAt(3, WriteDay, 4, "Bob's.", user: Bob), TestContext.Current.CancellationToken);
+
+        var counts = await repository.GetDayCountsBySchedule(
+            Bob, 3, WriteDay, WriteDay.AddDays(1), TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, Assert.Single(counts).Count);
     }
 
     [Fact]
@@ -49,7 +140,7 @@ public class InMemoryNoteRepositoryTests
         var repository = SeededRepository();
 
         var notes = await repository.GetBySchedule(
-            1, WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken);
+            Alice, 1, WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken);
 
         Assert.NotEmpty(notes);
         Assert.All(notes, note => Assert.Equal(1, note.ScheduleSpanHours));
@@ -64,7 +155,7 @@ public class InMemoryNoteRepositoryTests
         var repository = SeededRepository();
 
         var notes = await repository.GetBySchedule(
-            scheduleSpanHours, WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken);
+            Alice, scheduleSpanHours, WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken);
 
         Assert.NotEmpty(notes);
         Assert.All(notes, note => Assert.Equal(scheduleSpanHours, note.ScheduleSpanHours));
@@ -77,7 +168,7 @@ public class InMemoryNoteRepositoryTests
         var repository = SeededRepository();
 
         var notes = await repository.GetBySchedule(
-            5, WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken);
+            Alice, 5, WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken);
 
         Assert.Empty(notes);
     }
@@ -88,7 +179,7 @@ public class InMemoryNoteRepositoryTests
         var repository = SeededRepository();
 
         var note = (await repository.GetBySchedule(
-            1, WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken)).First();
+            Alice, 1, WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken)).First();
 
         Assert.Equal(1, note.ScheduleSpanHours);
         Assert.NotEqual(default, note.Day);
@@ -135,7 +226,7 @@ public class InMemoryNoteRepositoryTests
         var repository = SeededRepository();
 
         var notes = await repository.GetBySchedule(
-            scheduleSpanHours, Today, Day(1), TestContext.Current.CancellationToken);
+            Alice, scheduleSpanHours, Today, Day(1), TestContext.Current.CancellationToken);
 
         Assert.Equal(2, notes.Count);
         Assert.Equal(2, notes.Select(note => note.PeriodOrdinal).Distinct().Count());
@@ -150,7 +241,7 @@ public class InMemoryNoteRepositoryTests
         var repository = SeededRepository();
 
         var notes = await repository.GetBySchedule(
-            scheduleSpanHours, WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken);
+            Alice, scheduleSpanHours, WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken);
 
         Assert.All(notes, note => Assert.InRange(note.Day, Day(-3), Day(3)));
         Assert.Contains(notes, note => note.Day == Today);
@@ -164,7 +255,7 @@ public class InMemoryNoteRepositoryTests
         var repository = SeededRepository();
 
         var notes = await repository.GetBySchedule(
-            1, Today, Day(1), TestContext.Current.CancellationToken);
+            Alice, 1, Today, Day(1), TestContext.Current.CancellationToken);
 
         Assert.NotEmpty(notes);
         Assert.All(notes, note => Assert.Equal(Today, note.Day));
@@ -177,7 +268,7 @@ public class InMemoryNoteRepositoryTests
 
         // Every seeded CreatedAt is today, so a three-day-back window proves Day does the filtering.
         var past = await repository.GetBySchedule(
-            1, Day(-3), Day(-2), TestContext.Current.CancellationToken);
+            Alice, 1, Day(-3), Day(-2), TestContext.Current.CancellationToken);
 
         Assert.NotEmpty(past);
         Assert.All(past, note => Assert.Equal(DateTime.Today, note.CreatedAt.LocalDateTime.Date));
@@ -191,7 +282,7 @@ public class InMemoryNoteRepositoryTests
         var boundary = (await AllSeeded(repository)).Min(note => note.Day);
 
         var notes = await repository.GetBySchedule(
-            1, boundary, boundary.AddDays(1), TestContext.Current.CancellationToken);
+            Alice, 1, boundary, boundary.AddDays(1), TestContext.Current.CancellationToken);
 
         Assert.Contains(notes, note => note.Day == boundary);
     }
@@ -203,7 +294,7 @@ public class InMemoryNoteRepositoryTests
         var boundary = (await AllSeeded(repository)).Max(note => note.Day);
 
         var notes = await repository.GetBySchedule(
-            1, boundary.AddDays(-1), boundary, TestContext.Current.CancellationToken);
+            Alice, 1, boundary.AddDays(-1), boundary, TestContext.Current.CancellationToken);
 
         Assert.DoesNotContain(notes, note => note.Day == boundary);
     }
@@ -214,9 +305,9 @@ public class InMemoryNoteRepositoryTests
         var repository = SeededRepository();
 
         var earlier = await repository.GetBySchedule(
-            1, Day(-3), Today, TestContext.Current.CancellationToken);
+            Alice, 1, Day(-3), Today, TestContext.Current.CancellationToken);
         var later = await repository.GetBySchedule(
-            1, Today, Day(3), TestContext.Current.CancellationToken);
+            Alice, 1, Today, Day(3), TestContext.Current.CancellationToken);
 
         Assert.NotEmpty(earlier);
         Assert.NotEmpty(later);
@@ -229,7 +320,7 @@ public class InMemoryNoteRepositoryTests
         var repository = SeededRepository();
 
         var notes = await repository.GetBySchedule(
-            3, Today, Day(1), TestContext.Current.CancellationToken);
+            Alice, 3, Today, Day(1), TestContext.Current.CancellationToken);
 
         Assert.NotEmpty(notes);
         Assert.All(notes, note => Assert.Equal(3, note.ScheduleSpanHours));
@@ -242,7 +333,7 @@ public class InMemoryNoteRepositoryTests
         var repository = SeededRepository();
 
         var notes = await repository.GetBySchedule(
-            1, WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken);
+            Alice, 1, WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken);
         var today = notes.Where(note => note.Day == Today).ToList();
 
         Assert.Equal(
@@ -258,7 +349,7 @@ public class InMemoryNoteRepositoryTests
         var repository = SeededRepository();
 
         var notes = await repository.GetBySchedule(
-            1, Day(300), Day(301), TestContext.Current.CancellationToken);
+            Alice, 1, Day(300), Day(301), TestContext.Current.CancellationToken);
 
         Assert.NotNull(notes);
         Assert.Empty(notes);
@@ -270,9 +361,9 @@ public class InMemoryNoteRepositoryTests
         var repository = SeededRepository();
 
         var counts = await repository.GetDayCountsBySchedule(
-            1, WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken);
+            Alice, 1, WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken);
         var notes = await repository.GetBySchedule(
-            1, WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken);
+            Alice, 1, WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken);
 
         Assert.Equal(notes.Select(note => note.Day).Distinct().Count(), counts.Count);
         Assert.All(counts, count => Assert.True(count.Count > 0));
@@ -285,7 +376,7 @@ public class InMemoryNoteRepositoryTests
         var repository = SeededRepository();
 
         var counts = await repository.GetDayCountsBySchedule(
-            1, Today, Day(1), TestContext.Current.CancellationToken);
+            Alice, 1, Today, Day(1), TestContext.Current.CancellationToken);
 
         var today = Assert.Single(counts);
         Assert.Equal(Today, today.Day);
@@ -298,7 +389,7 @@ public class InMemoryNoteRepositoryTests
         var repository = SeededRepository();
 
         var counts = await repository.GetDayCountsBySchedule(
-            1, WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken);
+            Alice, 1, WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken);
 
         Assert.Equal(counts.OrderBy(count => count.Day), counts);
     }
@@ -309,7 +400,7 @@ public class InMemoryNoteRepositoryTests
         var repository = SeededRepository();
 
         var counts = await repository.GetDayCountsBySchedule(
-            1, WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken);
+            Alice, 1, WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken);
 
         // The seed leaves day +2 empty for s1.
         Assert.DoesNotContain(counts, count => count.Day == Day(2));
@@ -320,12 +411,12 @@ public class InMemoryNoteRepositoryTests
     {
         var repository = SeededRepository();
         var all = await repository.GetBySchedule(
-            1, WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken);
+            Alice, 1, WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken);
         var first = all.Min(note => note.Day);
         var last = all.Max(note => note.Day);
 
         var counts = await repository.GetDayCountsBySchedule(
-            1, first, last, TestContext.Current.CancellationToken);
+            Alice, 1, first, last, TestContext.Current.CancellationToken);
 
         Assert.Contains(counts, count => count.Day == first);
         Assert.DoesNotContain(counts, count => count.Day == last);
@@ -340,9 +431,9 @@ public class InMemoryNoteRepositoryTests
         var repository = SeededRepository();
 
         var counts = await repository.GetDayCountsBySchedule(
-            1, Today, Day(1), TestContext.Current.CancellationToken);
+            Alice, 1, Today, Day(1), TestContext.Current.CancellationToken);
         var otherNotes = await repository.GetBySchedule(
-            3, Today, Day(1), TestContext.Current.CancellationToken);
+            Alice, 3, Today, Day(1), TestContext.Current.CancellationToken);
 
         Assert.NotEmpty(otherNotes);
         Assert.Equal(2, counts.Sum(count => count.Count));
@@ -354,7 +445,7 @@ public class InMemoryNoteRepositoryTests
         var repository = SeededRepository();
 
         var counts = await repository.GetDayCountsBySchedule(
-            1, Day(300), Day(301), TestContext.Current.CancellationToken);
+            Alice, 1, Day(300), Day(301), TestContext.Current.CancellationToken);
 
         Assert.NotNull(counts);
         Assert.Empty(counts);
@@ -370,12 +461,14 @@ public class InMemoryNoteRepositoryTests
         DateOnly day,
         int periodOrdinal,
         string content,
-        DateTimeOffset? at = null)
+        DateTimeOffset? at = null,
+        Guid? user = null)
     {
         var stamp = at ?? new DateTimeOffset(2026, 8, 25, 9, 30, 0, TimeSpan.Zero);
 
         return new Note
         {
+            UserId = user ?? Alice,
             ScheduleSpanHours = scheduleSpanHours,
             Day = day,
             PeriodOrdinal = periodOrdinal,
@@ -386,9 +479,9 @@ public class InMemoryNoteRepositoryTests
     }
 
     private static Task<IReadOnlyList<Note>> NotesAround(
-        InMemoryNoteRepository repository, int scheduleSpanHours, DateOnly day) =>
+        InMemoryNoteRepository repository, int scheduleSpanHours, DateOnly day, Guid? user = null) =>
         repository.GetBySchedule(
-            scheduleSpanHours, day, day.AddDays(1), TestContext.Current.CancellationToken);
+            user ?? Alice, scheduleSpanHours, day, day.AddDays(1), TestContext.Current.CancellationToken);
 
     [Fact]
     public async Task Upsert_CreatesANoteInAnEmptyPeriod()
@@ -500,12 +593,12 @@ public class InMemoryNoteRepositoryTests
         await repository.Upsert(
             NoteAt(1, WriteDay, 9, "Doomed."), TestContext.Current.CancellationToken);
 
-        var deleted = await repository.Delete(1, WriteDay, 9, TestContext.Current.CancellationToken);
+        var deleted = await repository.Delete(Alice, 1, WriteDay, 9, TestContext.Current.CancellationToken);
 
         Assert.True(deleted);
         Assert.Empty(await NotesAround(repository, 1, WriteDay));
         Assert.Empty(await repository.GetDayCountsBySchedule(
-            1, WriteDay, WriteDay.AddDays(1), TestContext.Current.CancellationToken));
+            Alice, 1, WriteDay, WriteDay.AddDays(1), TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -514,7 +607,7 @@ public class InMemoryNoteRepositoryTests
         var repository = SeededRepository();
 
         Assert.False(
-            await repository.Delete(1, WriteDay, 9, TestContext.Current.CancellationToken));
+            await repository.Delete(Alice, 1, WriteDay, 9, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -526,7 +619,7 @@ public class InMemoryNoteRepositoryTests
         await repository.Upsert(
             NoteAt(3, WriteDay, 4, "Three-hourly."), TestContext.Current.CancellationToken);
 
-        await repository.Delete(1, WriteDay, 4, TestContext.Current.CancellationToken);
+        await repository.Delete(Alice, 1, WriteDay, 4, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             "Three-hourly.", Assert.Single(await NotesAround(repository, 3, WriteDay)).Content);
@@ -558,7 +651,7 @@ public class InMemoryNoteRepositoryTests
             NoteAt(1, WriteDay, 9, content), TestContext.Current.CancellationToken);
 
         var counts = await repository.GetDayCountsBySchedule(
-            1, WriteDay, WriteDay.AddDays(1), TestContext.Current.CancellationToken);
+            Alice, 1, WriteDay, WriteDay.AddDays(1), TestContext.Current.CancellationToken);
 
         // Absent entirely rather than present as a zero: a marker would render a blank day.
         Assert.Empty(counts);
@@ -574,7 +667,7 @@ public class InMemoryNoteRepositoryTests
             NoteAt(1, WriteDay, 10, "   "), TestContext.Current.CancellationToken);
 
         var counts = await repository.GetDayCountsBySchedule(
-            1, WriteDay, WriteDay.AddDays(1), TestContext.Current.CancellationToken);
+            Alice, 1, WriteDay, WriteDay.AddDays(1), TestContext.Current.CancellationToken);
 
         Assert.Equal(1, Assert.Single(counts).Count);
     }
@@ -616,8 +709,8 @@ public class InMemoryNoteRepositoryTests
         await repository.Upsert(
             NoteAt(1, WriteDay, 9, ""), TestContext.Current.CancellationToken);
 
-        Assert.True(await repository.Delete(1, WriteDay, 9, TestContext.Current.CancellationToken));
-        Assert.False(await repository.Delete(1, WriteDay, 9, TestContext.Current.CancellationToken));
+        Assert.True(await repository.Delete(Alice, 1, WriteDay, 9, TestContext.Current.CancellationToken));
+        Assert.False(await repository.Delete(Alice, 1, WriteDay, 9, TestContext.Current.CancellationToken));
     }
 
     /// <summary>Not the whitespace the client sent, so the read filter can be length alone.</summary>
@@ -667,7 +760,7 @@ public class InMemoryNoteRepositoryTests
     [Fact]
     public async Task Upsert_FromManyRequestsAtOnce_KeepsEveryNote()
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = new InMemoryNoteRepository(seedEachUser: false);
 
         await Task.WhenAll(
             Enumerable.Range(1, 24).Select(ordinal => Task.Run(() =>
@@ -681,7 +774,7 @@ public class InMemoryNoteRepositoryTests
     [Fact]
     public async Task ReadsAndWrites_AtOnce_NeverTearTheStore()
     {
-        var repository = new InMemoryNoteRepository();
+        var repository = new InMemoryNoteRepository(seedEachUser: false);
         var writes = Enumerable.Range(1, 24).Select(ordinal => Task.Run(() =>
             repository.Upsert(
                 NoteAt(1, WriteDay, ordinal, $"Note {ordinal}."),
@@ -695,22 +788,18 @@ public class InMemoryNoteRepositoryTests
         Assert.Null(exception);
     }
 
-    private static InMemoryNoteRepository SeededRepository()
-    {
-        var repository = new InMemoryNoteRepository();
-        repository.Seed();
+    private static InMemoryNoteRepository SeededRepository() => new(seedEachUser: true);
 
-        return repository;
-    }
-
-    private static async Task<IReadOnlyList<Note>> AllSeeded(InMemoryNoteRepository repository)
+    private static async Task<IReadOnlyList<Note>> AllSeeded(
+        InMemoryNoteRepository repository, Guid? user = null)
     {
         var notes = new List<Note>();
 
         foreach (var scheduleSpanHours in Schedules.Known)
         {
             notes.AddRange(await repository.GetBySchedule(
-                scheduleSpanHours, WholeSeed.From, WholeSeed.To, TestContext.Current.CancellationToken));
+                user ?? Alice, scheduleSpanHours, WholeSeed.From, WholeSeed.To,
+                TestContext.Current.CancellationToken));
         }
 
         return notes;

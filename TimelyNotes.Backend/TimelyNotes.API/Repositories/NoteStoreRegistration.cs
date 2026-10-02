@@ -27,13 +27,8 @@ public static class NoteStoreRegistration
         switch (store)
         {
             case NoteStore.Memory:
-                services.AddSingleton<INoteRepository>(_ =>
-                {
-                    var notes = new InMemoryNoteRepository();
-                    notes.Seed();
-
-                    return notes;
-                });
+                services.AddSingleton<INoteRepository>(new InMemoryNoteRepository(seedEachUser: true));
+                services.AddSingleton<IUserRepository, InMemoryUserRepository>();
                 break;
 
             case NoteStore.Postgres:
@@ -47,6 +42,7 @@ public static class NoteStoreRegistration
                     .UseSnakeCaseNamingConvention());
 
                 services.AddSingleton<INoteRepository, PostgresNoteRepository>();
+                services.AddSingleton<IUserRepository, PostgresUserRepository>();
                 break;
         }
 

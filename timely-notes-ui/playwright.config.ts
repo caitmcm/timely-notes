@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test'
+import { mintApiToken } from './e2e/fixtures/mintToken'
 
 /**
  * The stubbed lane runs on 5174 so it never collides with a developer's own 5173 dev server; the
@@ -10,6 +11,9 @@ const INTEGRATED_URL = 'http://localhost:5173'
 // `webServer` is config-wide, not per project, so which servers to start is read off the requested
 // project. An env var would not survive `npm run` on Windows; the stubbed lane never needs the SDK.
 const isIntegrated = process.argv.includes('integrated') || process.argv.includes('--project=integrated')
+
+// Minted here, not in globalSetup: `webServer` starts first, and the dev server bakes the token in.
+const integratedToken = isIntegrated ? mintApiToken() : ''
 
 export default defineConfig({
   testDir: './e2e',
@@ -36,6 +40,9 @@ export default defineConfig({
     {
       name: 'integrated',
       grep: /@integrated/,
+      // One worker's worth: two cold loads at once against a fresh dev server sometimes never
+      // reach `load`, and the lane is one file of five tests anyway.
+      fullyParallel: false,
       use: { ...devices['Desktop Chrome'], baseURL: INTEGRATED_URL },
     },
   ],
@@ -50,9 +57,12 @@ export default defineConfig({
           timeout: 180_000,
         },
         {
-          command: 'npm run dev -- --port 5173 --strictPort',
+          // `e2e` mode: static auth, signed in as the minted token's user. Never a running dev
+          // server, which would be in `oidc` mode and show the sign-in screen.
+          command: 'npm run dev -- --mode e2e --port 5173 --strictPort',
           url: INTEGRATED_URL,
-          reuseExistingServer: true,
+          env: { VITE_AUTH_STATIC_TOKEN: integratedToken },
+          reuseExistingServer: false,
         },
       ]
     : [
@@ -60,7 +70,8 @@ export default defineConfig({
           // The built bundle, not the dev server: a fresh browser context has an empty cache, and
           // re-transforming the editor's module graph per test made a cold load take twenty seconds.
           // Nothing here needs the dev proxy — every /api request is intercepted.
-          command: 'npm run build && npm run preview -- --host 127.0.0.1 --port 5174 --strictPort',
+          command:
+            'npm run build -- --mode e2e && npm run preview -- --host 127.0.0.1 --port 5174 --strictPort',
           url: STUBBED_URL,
           reuseExistingServer: !process.env.CI,
         },

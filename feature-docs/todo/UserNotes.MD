@@ -304,116 +304,116 @@ or with the CLI (decision 21).
 
 ### 1. The User entity and the schema (`Models/`, `Data/`)
 
-- [ ] Test first: `NotesDbContext.Model` gives `User` a primary key of exactly `Id`, a unique
+- [x] Test first: `NotesDbContext.Model` gives `User` a primary key of exactly `Id`, a unique
       key on `(Issuer, Subject)`, `text` columns and `timestamptz` for `CreatedAt`.
-- [ ] Test first: `Note`'s primary key is exactly `(UserId, ScheduleSpanHours, Day,
+- [x] Test first: `Note`'s primary key is exactly `(UserId, ScheduleSpanHours, Day,
       PeriodOrdinal)`, in that order.
-- [ ] Test first: `Note.UserId` is a required foreign key to `User.Id` with delete behaviour
+- [x] Test first: `Note.UserId` is a required foreign key to `User.Id` with delete behaviour
       `Restrict`.
-- [ ] Implement `User`, `Note.UserId` and the model configuration.
-- [ ] Generate the `AddUsers` migration; read it against **The schema**. Confirm `user_id` has
+- [x] Implement `User`, `Note.UserId` and the model configuration.
+- [x] Generate the `AddUsers` migration; read it against **The schema**. Confirm `user_id` has
       no default.
-- [ ] Drop and recreate `timely_notes_dev`, then `database update` (setup, by hand).
+- [x] Drop and recreate `timely_notes_dev`, then `database update` (setup, by hand).
 
 ### 2. Users repositories (`Repositories/`)
 
-- [ ] Test first: `InMemoryUserRepository.Resolve` returns the same id for the same
+- [x] Test first: `InMemoryUserRepository.Resolve` returns the same id for the same
       `(issuer, subject)`, and different ids for a different subject **or** a different issuer.
-- [ ] Test first: concurrent `Resolve` calls for one new pair return one id.
-- [ ] Implement `InMemoryUserRepository` (ids are `Guid.CreateVersion7()`).
-- [ ] Test first, via SQL assertions as in `PostgresUpsertSqlTests`: `PostgresUserRepository`'s
+- [x] Test first: concurrent `Resolve` calls for one new pair return one id.
+- [x] Implement `InMemoryUserRepository` (ids are `Guid.CreateVersion7()`).
+- [x] Test first, via SQL assertions as in `PostgresUpsertSqlTests`: `PostgresUserRepository`'s
       insert is `ON CONFLICT (issuer, subject) DO NOTHING`.
-- [ ] Implement `PostgresUserRepository`.
-- [ ] Test first: `NoteStoreRegistration` registers the matching `IUserRepository` for each
+- [x] Implement `PostgresUserRepository`.
+- [x] Test first: `NoteStoreRegistration` registers the matching `IUserRepository` for each
       `Database:Provider`.
 
 ### 3. Tenancy in the note stores
 
-- [ ] Test first: `InMemoryNoteRepository` — two users upserting the same address hold two
+- [x] Test first: `InMemoryNoteRepository` — two users upserting the same address hold two
       notes, and each read returns only the caller's.
-- [ ] Test first: a user's `Delete` of an address only another user holds returns `false` and
+- [x] Test first: a user's `Delete` of an address only another user holds returns `false` and
       leaves that note.
-- [ ] Test first: `GetDayCountsBySchedule` counts only the caller's notes.
-- [ ] Test first: with seeding on, a user's first read returns the seed and a second user gets
+- [x] Test first: `GetDayCountsBySchedule` counts only the caller's notes.
+- [x] Test first: with seeding on, a user's first read returns the seed and a second user gets
       their own copy; with seeding off, a new user's store is empty.
-- [ ] Add `Guid userId` to `INoteRepository` and implement it in `InMemoryNoteRepository`.
-- [ ] Test first, via `ToQueryString()`: both `NoteQueries` filter on `user_id`.
-- [ ] Test first: `UpsertSql` inserts `user_id` and its conflict target leads with `user_id`.
-- [ ] Implement tenancy in `PostgresNoteRepository` and `NoteQueries`.
+- [x] Add `Guid userId` to `INoteRepository` and implement it in `InMemoryNoteRepository`.
+- [x] Test first, via `ToQueryString()`: both `NoteQueries` filter on `user_id`.
+- [x] Test first: `UpsertSql` inserts `user_id` and its conflict target leads with `user_id`.
+- [x] Implement tenancy in `PostgresNoteRepository` and `NoteQueries`.
 
 ### 4. Authentication (`Auth/`, `Program.cs`)
 
-- [ ] Test first: startup fails naming `Auth:Authority` when it is absent, and likewise
+- [x] Test first: startup fails naming `Auth:Authority` when it is absent, and likewise
       `Auth:Audience`.
-- [ ] Test first: outside Development the only authenticate scheme is `Auth0`; in Development
+- [x] Test first: outside Development the only authenticate scheme is `Auth0`; in Development
       the policy forwards a `dotnet-user-jwts` issuer to `Bearer` and anything else to `Auth0`.
-- [ ] Test first: `Auth0` validates issuer and audience and has `MapInboundClaims` off.
-- [ ] Implement `AddNoteAuth`; `Program.cs` calls `UseAuthentication`/`UseAuthorization` before
+- [x] Test first: `Auth0` validates issuer and audience and has `MapInboundClaims` off.
+- [x] Implement `AddNoteAuth`; `Program.cs` calls `UseAuthentication`/`UseAuthorization` before
       `UseFastEndpoints`.
-- [ ] Test first: `UserResolution` adds `timely:user_id` from `(iss, sub)`, and calls the
+- [x] Test first: `UserResolution` adds `timely:user_id` from `(iss, sub)`, and calls the
       repository once per pair per process.
-- [ ] Test first: a principal with no `sub` gets no user claim.
-- [ ] Implement `UserResolution` and `UserClaims`.
-- [ ] Add the `X-Test-User` test scheme to the `AppFixture`s; existing endpoint tests send it.
+- [x] Test first: a principal with no `sub` gets no user claim.
+- [x] Implement `UserResolution` and `UserClaims`.
+- [x] Add the `X-Test-User` test scheme to the `AppFixture`s; existing endpoint tests send it.
 
 ### 5. Endpoints
 
-- [ ] Test first, per route: no credentials → `401`; a malformed Schedule without credentials →
+- [x] Test first, per route: no credentials → `401`; a malformed Schedule without credentials →
       `401`, not `400`.
-- [ ] Test first: `alice` and `bob` `PUT` the same address → both `201`; each `GET` returns only
+- [x] Test first: `alice` and `bob` `PUT` the same address → both `201`; each `GET` returns only
       their own content; `note-days` counts only their own.
-- [ ] Test first: `bob`'s `DELETE` of an address only `alice` holds → `404`, and `alice`'s note
+- [x] Test first: `bob`'s `DELETE` of an address only `alice` holds → `404`, and `alice`'s note
       is still there.
-- [ ] Test first: no response body contains a `userId` property.
-- [ ] Add `[FromClaim] Guid UserId` to the four requests, pass it through, remove
+- [x] Test first: no response body contains a `userId` property.
+- [x] Add `[FromClaim] Guid UserId` to the four requests, pass it through, remove
       `AllowAnonymous()`.
-- [ ] Swagger declares the bearer scheme and stays reachable anonymously.
-- [ ] `TimelyNotes.API.http` sends `Authorization: Bearer {{token}}`, with a comment naming
+- [x] Swagger declares the bearer scheme and stays reachable anonymously.
+- [x] `TimelyNotes.API.http` sends `Authorization: Bearer {{token}}`, with a comment naming
       `dotnet user-jwts create --audience https://api.timely-notes`.
 
 ### 6. Frontend auth boundary (`auth/`)
 
-- [ ] Test first: `static` mode is signed in immediately and its `TokenSource` yields the
+- [x] Test first: `static` mode is signed in immediately and its `TokenSource` yields the
       configured token.
-- [ ] Test first: `oidc` mode starts signed out when nothing is stored, and `signIn` calls
+- [x] Test first: `oidc` mode starts signed out when nothing is stored, and `signIn` calls
       `signinRedirect` with `audience` in `extraQueryParams` (library mocked).
-- [ ] Test first: `signUp` is the same redirect plus `screen_hint=signup`.
-- [ ] Test first: `renew` forces a silent renew and returns the new access token.
-- [ ] Implement `AuthBoundary`, `useAuth` and both modes.
-- [ ] Test first: the build check rejects `VITE_AUTH_MODE=static` with `mode === 'production'`.
-- [ ] Implement the check in `vite.config.ts`.
+- [x] Test first: `signUp` is the same redirect plus `screen_hint=signup`.
+- [x] Test first: `renew` forces a silent renew and returns the new access token.
+- [x] Implement `AuthBoundary`, `useAuth` and both modes.
+- [x] Test first: the build check rejects `VITE_AUTH_MODE=static` with `mode === 'production'`.
+- [x] Implement the check in `vite.config.ts`.
 
 ### 7. The API client (`api/notesApi.ts`)
 
-- [ ] Test first: every call sends `Authorization: Bearer <token>` from its `TokenSource`.
-- [ ] Test first: a `401` renews once and retries once, and a second `401` throws.
-- [ ] Test first: a non-`401` failure does not renew.
-- [ ] Implement.
+- [x] Test first: every call sends `Authorization: Bearer <token>` from its `TokenSource`.
+- [x] Test first: a `401` renews once and retries once, and a second `401` throws.
+- [x] Test first: a non-`401` failure does not renew.
+- [x] Implement.
 
 ### 8. The UI (`main.tsx`, `App.tsx`, components)
 
-- [ ] Test first: signed out renders `SignInScreen` and makes no API call; **Sign in** calls
+- [x] Test first: signed out renders `SignInScreen` and makes no API call; **Sign in** calls
       `signIn` and **Create account** calls `signUp`.
-- [ ] Test first: the notice names the provider from `VITE_AUTH_PROVIDER_NAME` and says the app
+- [x] Test first: the notice names the provider from `VITE_AUTH_PROVIDER_NAME` and says the app
       keeps no name or email address.
-- [ ] Test first: signed in renders `App`, and `App` passes the `TokenSource` to every domain
+- [x] Test first: signed in renders `App`, and `App` passes the `TokenSource` to every domain
       call.
-- [ ] Test first: `MenuDrawer` shows *Signed in as* the email and **Sign out** calls
+- [x] Test first: `MenuDrawer` shows *Signed in as* the email and **Sign out** calls
       `signOut`.
-- [ ] Test first: a save that fails after a failed renewal leaves the dialog open with the
+- [x] Test first: a save that fails after a failed renewal leaves the dialog open with the
       existing error status.
-- [ ] Implement.
+- [x] Implement.
 
 ### 9. E2E lanes (after Vitest is green)
 
-- [ ] `.env.e2e` sets `VITE_AUTH_MODE=static`; the stubbed lane builds with `--mode e2e`.
-- [ ] `ApiStub` records the `Authorization` header; one stubbed spec asserts it is on every
+- [x] `.env.e2e` sets `VITE_AUTH_MODE=static`; the stubbed lane builds with `--mode e2e`.
+- [x] `ApiStub` records the `Authorization` header; one stubbed spec asserts it is on every
       request.
-- [ ] Integrated global setup mints a token with `dotnet user-jwts`; the dev server gets it via
+- [x] Integrated global setup mints a token with `dotnet user-jwts`; the dev server gets it via
       `webServer.env` in `e2e` mode.
-- [ ] One `@integrated` spec: a write then a read round-trips under the minted user.
+- [x] One `@integrated` spec: a write then a read round-trips under the minted user.
 
-### 10. Deployment (setup)
+### 10. Deployment (setup) — deferred until the local Verify passes
 
 - [ ] The Auth0 Application's Allowed Callback URLs, Allowed Logout URLs and Allowed Web Origins
       gain the deployed UI origin.
@@ -423,26 +423,26 @@ or with the CLI (decision 21).
 
 ### 11. Docs
 
-- [ ] `DESIGN DOCUMENT.MD`: *Instance* becomes *User*. Close the authentication open question
+- [x] `DESIGN DOCUMENT.MD`: *Instance* becomes *User*. Close the authentication open question
       and the Keycloak note. The "single user with one calendar" wording becomes "each user's
       own calendar".
-- [ ] `CLAUDE.md`: Navigation gains `Auth/` and `auth/`. Current state, and the setup of
+- [x] `CLAUDE.md`: Navigation gains `Auth/` and `auth/`. Current state, and the setup of
       `dotnet user-jwts` for local API work.
 
 ## Verify
 
-- [ ] `dotnet build`, `dotnet test` (from `TimelyNotes.Backend/`).
-- [ ] `npm run lint`, `npm test`, `npm run build`, `npm run test:e2e`, `npm run test:e2e:integrated`.
-- [ ] `npm run build -- --mode production` with `VITE_AUTH_MODE=static` fails.
-- [ ] By hand, `Postgres` store, `run-dev.ps1`:
-  - [ ] **Create account** opens Auth0's sign-up form; sign up with an email address. Expect a
+- [x] `dotnet build`, `dotnet test` (from `TimelyNotes.Backend/`).
+- [x] `npm run lint`, `npm test`, `npm run build`, `npm run test:e2e`, `npm run test:e2e:integrated`.
+- [x] `npm run build -- --mode production` with `VITE_AUTH_MODE=static` fails.
+- [x] By hand, `Postgres` store, `run-dev.ps1`:
+  - [x] **Create account** opens Auth0's sign-up form; sign up with an email address. Expect a
         one-time consent prompt for the API, because Auth0 never skips consent on `localhost`.
-  - [ ] Sign in with Google from the same page and see a separate, empty account.
-  - [ ] Write a note, reload, and see it still there.
-  - [ ] Sign out.
-  - [ ] Sign up as a second address and see an empty grid at the same address.
-  - [ ] In `psql`: two `users` rows, and each note under the right `user_id`.
-- [ ] Deployed: sign in on the deployed UI; write and read a note.
+  - [x] ~~Sign in with Google from the same page and see a separate, empty account.~~ Skipped by choice; isolation is covered by `NoteTenancyEndpointTests`.
+  - [x] Write a note, reload, and see it still there. (Done as sign out, sign in, see the note.)
+  - [x] Sign out.
+  - [x] ~~Sign up as a second address and see an empty grid at the same address.~~ Skipped with the Google check.
+  - [x] In `psql`: two `users` rows, and each note under the right `user_id`.
+- [ ] Deployed: sign in on the deployed UI; write and read a note. Deferred with section 10.
 - [ ] Audit the tenant with the `auth0` skill (decision 21). Fix each finding, or record it in
       Implementation notes.
 
@@ -466,6 +466,8 @@ or with the CLI (decision 21).
 - **Per-user Schedules** — Schedules stay code; every user has `s1`/`s3`/`s6`.
 - **Per-user timezone** — the design document's Schedule-carries-a-timezone note is unchanged.
 - **`EmptyNotePruning.MD`** — when scheduled, its SQL gains `user_id`.
+- **A custom sign-in error page, and a reworked sign-in screen.** A failed sign-in today lands on
+  the plain sign-in screen with the provider's `error` left in the address bar.
 
 ## Implementation notes
 
@@ -475,3 +477,95 @@ or with the CLI (decision 21).
   on. The values are in `timely-notes-ui/.env` and in `appsettings.json` under `Auth`. They are
   not yet in GitHub `vars` or the App Service settings.
 
+- **`AddUsers` was hand-edited to drop `defaultValue: Guid.Empty`.** EF scaffolds a default for a
+  new non-null column. Without it, `ALTER TABLE notes ADD user_id uuid NOT NULL` fails on a
+  non-empty table, which is decision 9's intent. The scripted SQL matches **The schema**.
+- **`User.Id` is `ValueGeneratedNever`.** EF would otherwise treat a `Guid` key as client-generated
+  on add; the repository mints it.
+- **`Upsert` takes the user on the `Note`, not as a separate parameter.** `Note.UserId` is
+  `required`, so the method still cannot be called without one; a second `userId` argument would
+  only add a way for the two to disagree. The other three methods take `Guid userId` first.
+- **In-memory seeding is a constructor flag, `seedEachUser`.** `Seed()` is gone. Every access goes
+  through one private `Notes(userId)` that seeds a user on first touch, so a first write lands on
+  top of the seed rather than under it.
+- **`UserResolution` reads the `iss` and `sub` claims, not `Claim.Issuer`.** Both arrive unmapped
+  (`MapInboundClaims = false`), and the test scheme can supply them the same way. It is
+  registered by `AddNoteAuth`, and passes `CancellationToken.None`: `IClaimsTransformation` has
+  no token. A principal it has already transformed is returned untouched, because authentication
+  may transform one principal more than once per request.
+- **The policy scheme is named `ByIssuer`.** It reads the token's `iss` without validating it;
+  anything that is not a readable `dotnet-user-jwts` token goes to `Auth0`.
+- **The selector catches a malformed token.** `JsonWebTokenHandler.CanReadToken` checks only the
+  three-part shape, so `Bearer abc.def.ghi` threw from `ReadJsonWebToken` and answered `500`. Found
+  by running the API in Development; it is now a test case and answers `401`.
+- **Swagger is tested under its own `DevelopmentApiFixture`.** FastEndpoints' `AppFixture` does not
+  run as Development, where alone `UseSwaggerGen` is mapped. FastEndpoints.Swagger already declares
+  `JWTBearerAuth` (`http`, scheme `Bearer`); no configuration was needed.
+- **Endpoint fixtures derive from `SignedInAppFixture`.** It registers the `X-Test-User` scheme as
+  the default, signs `Client` in as `alice`, and offers `ClientFor(user)` and `AnonymousClient()`.
+  The tenancy tests have their own `TenancyApiFixture`, and each test uses its own users and day.
+- **`dotnet user-jwts create` wrote `Authentication:Schemes:Bearer` into
+  `appsettings.Development.json`** (issuer `dotnet-user-jwts`, audience `https://api.timely-notes`)
+  and a signing key into user secrets. The settings file change is checked in; the key is per
+  machine, so each checkout runs `user-jwts create` once.
+- **A `userId` in the `PUT` body is ignored.** FastEndpoints binds `[FromClaim]` after the body;
+  a test sends one and reads the note back as the caller.
+- **`OidcAuthProvider` takes a `UserManager`**, built by `createUserManager` in `auth/oidc.ts`.
+  The tests use a real one and spy on `signinRedirect`, `signinSilent` and `signoutRedirect`;
+  `vi.mock` would not reach `react-oidc-context`'s own import of `oidc-client-ts`. The
+  `TokenSource` reads from the manager, never from render state, so a held one cannot go stale.
+- **`audience` is in both the settings' `extraQueryParams` and each `signinRedirect` call.**
+  oidc-client-ts replaces the settings' value with the call's, so `signUp` has to repeat it beside
+  `screen_hint`; the settings' copy covers any authorize request the library issues itself.
+- **A new tab shows the sign-in screen; it does not redirect silently.** Decision 14's "one
+  silent redirect" would bounce every fresh visit through Auth0 before the screen could show,
+  and checklist 6 has the app start signed out. **Sign in** completes without a password while
+  Auth0's own session is live.
+- **The build guard is `src/auth/buildGuard.ts`, a plain function** that `vite.config.ts` calls
+  from a build-only plugin, with `loadEnv` so a `VITE_AUTH_MODE` in the environment counts as much
+  as one in a `.env` file.
+- **`AuthGate` sits between `AuthBoundary` and `App`** (`main.tsx`). It renders nothing while
+  the session loads, `SignInScreen` signed out, and `App` signed in, so `App`'s hooks never run
+  without a session. `App` calls `useAuth()` for `tokens`, `email` and `signOut`.
+- **The two fetching hooks take `tokens` first**, as `notesApi` does. `useScheduleNotes` and
+  `useNoteDays` call `notesApi` themselves, so "App is the only caller" now means App hands them
+  the `TokenSource`. `tokens` is in the fetch effect's dependencies, not the `AbortController`'s,
+  so the invariant that ties the controller to the Schedule is unchanged.
+- **`App.test.tsx` renders inside `StaticAuthProvider`.** The failed-renewal test supplies its own
+  `Auth` through `AuthContext`; the dialog stays open on *Not saved — retrying* with the text kept.
+- **The integrated token is minted in `playwright.config.ts`, not in `globalSetup`.** Playwright
+  starts `webServer` before global setup, and Vite bakes `VITE_AUTH_STATIC_TOKEN` in at server
+  start, so the token has to exist when the config is read. `e2e/fixtures/mintToken.ts` runs
+  `dotnet user-jwts create` only when the integrated project is asked for. Each run adds a JWT to
+  the API's user-jwts list; `dotnet user-jwts clear --force` empties it and keeps the signing key.
+- **The integrated lane's dev server is never reused** (`reuseExistingServer: false`). A
+  developer's own `npm run dev` is in `oidc` mode and would show the sign-in screen.
+- **The integrated project runs serially (`fullyParallel: false`).** With a fresh dev server every
+  run, two cold loads at once sometimes never reached `load` (two of five runs). One worker passed
+  eleven runs in a row, at 9.5s against 8.4s.
+- **The integrated write test now reads its note back from the API.** Switching Schedule and back
+  drops `useScheduleNotes`' cache, so the row is refilled by a real `GET` under the minted user.
+  It then reselects the row before deleting, since the switch moves the selection. *Opens a seeded
+  note* now waits for the row to load before opening it; the slower first request (user
+  provisioning plus seeding) had exposed that race.
+- **The stubbed spec assertion lives in `api-contract.spec.ts`**, at the end of its one test, so
+  the lane stays at 15. `ApiStub.authorizations` records the header on all three routes.
+- **The build guard also refuses a production OIDC build with any `VITE_AUTH_*` setting empty.**
+  `ui.yml` passes `${{ vars.VITE_AUTH_* }}`, and an unset var arrives as an empty string that
+  overrides the checked-in `.env`. Without the check, a push before the vars exist would deploy a
+  UI whose every sign-in fails. `ui.yml` now passes all four; setting the vars is still by hand.
+- **Automated Verify, 2026-10-02:** `dotnet build` clean (0 warnings), `dotnet test` 342 passed;
+  `npm run lint` clean, `npm test` 444 passed, `npm run build` passes, a static production build
+  fails as intended; stubbed lane 15 passed, integrated lane 5 passed. Not yet done: section 10,
+  the `timely_notes_dev` reset (section 1), and the by-hand and deployed checks in Verify.
+- **Deployment is deferred until the local Verify passes** (2026-10-02). Section 10 and the
+  deployed Verify check wait on it. Until the `VITE_AUTH_*` vars are set, a push that touches
+  `timely-notes-ui/` fails its build, as the build guard intends.
+- **The first local sign-in failed with `Client "…" is not authorized to access resource server
+  "https://api.timely-notes"`.** The API's *Application Access* policy for user access required
+  each application to be authorized explicitly, and the SPA was not. Fixed in the dashboard, under
+  **APIs → Timely Notes → Application Access**, by authorizing the SPA for user access. Checklist 0
+  did not cover this step. The `https://` in the audience is only an identifier and is never fetched.
+- **By-hand Verify, 2026-10-02, Postgres store:** Create account, write a note, sign out, sign in,
+  and the note is there; `psql` shows each note under its writer's `user_id`. The two cross-account
+  checks were skipped by choice; the endpoint and repository tenancy tests cover isolation.

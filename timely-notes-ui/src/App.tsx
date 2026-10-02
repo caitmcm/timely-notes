@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { deleteNote, saveNote } from './api/notesApi'
+import { useAuth } from './auth/useAuth'
 import { dayKeyOf, eachDay } from './domain/days'
 import { monthGrid, monthStartOf } from './domain/months'
 import {
@@ -38,6 +39,7 @@ interface Selection {
 
 function App({ now: nowProp }: AppProps) {
   const { now, readNow } = useNow(nowProp)
+  const { tokens, email, signOut } = useAuth()
 
   const [schedule, setSchedule] = useState<Schedule>(DEFAULT_SCHEDULE)
 
@@ -58,6 +60,7 @@ function App({ now: nowProp }: AppProps) {
   const { first, last } = windowOf(anchor)
 
   const { notesFor, isLoaded, error, applyNote, removeNote } = useScheduleNotes(
+    tokens,
     schedule,
     first,
     last,
@@ -78,7 +81,7 @@ function App({ now: nowProp }: AppProps) {
     countFor,
     isLoading: isCalendarLoading,
     error: calendarError,
-  } = useNoteDays(schedule, weeks[0][0], weeks.at(-1)!.at(-1)!, isCalendarOpen)
+  } = useNoteDays(tokens, schedule, weeks[0][0], weeks.at(-1)!.at(-1)!, isCalendarOpen)
 
   // App owns the domain calls, so everything below it is handed finished periods.
   const days = useMemo(
@@ -199,7 +202,7 @@ function App({ now: nowProp }: AppProps) {
   // The address is the row the user pressed — the same before the note exists, while it does, and
   // after it has been swept away. Nothing is stamped and nothing is minted.
   const handleSave = async (day: DayKey, ordinal: number, content: string, signal: AbortSignal) => {
-    const note = await saveNote(schedule.shortName, day, ordinal, content, signal)
+    const note = await saveNote(tokens, schedule.shortName, day, ordinal, content, signal)
 
     applyNote(note)
 
@@ -209,7 +212,7 @@ function App({ now: nowProp }: AppProps) {
   const handleRemove = async (day: DayKey, ordinal: number) => {
     // The row is already gone — the empty write cleared it — and stays gone if the delete fails.
     removeNote(day, ordinal)
-    await deleteNote(schedule.shortName, day, ordinal)
+    await deleteNote(tokens, schedule.shortName, day, ordinal)
   }
 
   return (
@@ -286,8 +289,10 @@ function App({ now: nowProp }: AppProps) {
       <MenuDrawer
         isOpen={isMenuOpen}
         selected={schedule.shortName}
+        email={email}
         onChangeSchedule={handleScheduleChange}
         onClose={() => setIsMenuOpen(false)}
+        onSignOut={() => void signOut()}
       />
 
       <CalendarDialog

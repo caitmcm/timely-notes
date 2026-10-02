@@ -18,9 +18,9 @@ This document captures the **goals** for the project. It is not an implementatio
 
 The business domain is a simple hierarchy:
 
-- **Instance** — the user's account / overall use of the app. An Instance has many Schedules.
+- **User** — the account, and the owner of every note in it. Identified by the identity provider's `(issuer, subject)` under an internal id of its own; the app keeps no name or email address. Each user has the same Schedules and their own notes in them: a note is addressed by `(User, Schedule, Day, PeriodOrdinal)`, and the user is always the one the access token names, never a part of the URL. (`UserNotes.MD`)
 - **Schedule** — a user-created container (vault-like, in the spirit of Obsidian) for a given spanning period (1-hour, 3-hourly, or 6-hourly). A Schedule has many Notes. Creating a Schedule means selecting its spanning period, and **the Schedule *is* that span**: it is stored as the number of hours (1, 3, 6) and spelled `s1`/`s3`/`s6` on the wire. At most one Schedule exists per spanning period, so no two overlap the same periods and the span is a sound identity. The only customisation ever likely is another divisor of 24, such as 2 or 12.
-- **Note** — a markdown document created within a specific Schedule, on a specific calendar day, in a specific **period** of that day. **A period holds at most one note**, and the period *is* the note's identity: a note is addressed by `(Schedule, Day, PeriodOrdinal)` and by nothing else. There is no surrogate id. The ordinal is 1-based and spelled `p{n}`, so `s3`'s 09:00–12:00 block is `p4` and the URL reads `/api/schedules/s3/notes/2026-09-05/p4`.
+- **Note** — a markdown document created within a specific Schedule, on a specific calendar day, in a specific **period** of that day. **A period holds at most one note**, and the period *is* the note's identity: within its user's notes, a note is addressed by `(Schedule, Day, PeriodOrdinal)` and by nothing else. There is no surrogate id. The ordinal is 1-based and spelled `p{n}`, so `s3`'s 09:00–12:00 block is `p4` and the URL reads `/api/schedules/s3/notes/2026-09-05/p4`.
 
 Rather than a single global granularity setting, a note is created within whichever Schedule is currently active, and is displayed only on that Schedule's view. The user can switch between Schedules, and each Schedule only shows the notes created within it. This avoids ever needing to re-bucket or reinterpret a note's slot: a 6-hourly note stays a 6-hourly note on its own Schedule, even if the user later switches to and creates notes in a 3-hourly Schedule.
 
@@ -40,9 +40,9 @@ Rather than a single global granularity setting, a note is created within whiche
   - **`Day` + `PeriodOrdinal`** — the slot the note is *for*, and its address. Not a timestamp: a calendar date and an integer, so there is no instant to reinterpret in another timezone. Immutable, and the only fields placement, ordering and filtering use. This replaces the earlier `OccursAt` instant, which let *rendering* and *addressing* disagree and so made a second, unreachable note in one period constructible.
   - **`CreatedAt`** — when the note was written. Server-set, audit only.
   - **`ModifiedAt`** — when the note was last changed. Server-set, audit only.
-- **Concurrent edits are last-write-wins, decided.** The server sets `ModifiedAt` on every write and the client never sends it. Autosave makes collisions likelier and optimistic concurrency *more* annoying, not less — a save that fails mid-keystroke cannot ask the user anything useful. Optimistic concurrency (an ETag or a `ModifiedAt` precondition) is the thing to revisit alongside auth and multi-user.
+- **Concurrent edits are last-write-wins, decided.** The server sets `ModifiedAt` on every write and the client never sends it. Autosave makes collisions likelier and optimistic concurrency *more* annoying, not less — a save that fails mid-keystroke cannot ask the user anything useful. Optimistic concurrency (an ETag or a `ModifiedAt` precondition) was deferred to auth and multi-user, and deferred again there (`UserNotes.MD`): with one user per note, the only collision left is one person's two tabs.
 - **`CreatedAt`/`ModifiedAt` are in the server's zone and are not rendered.** If either is ever displayed it is labelled as server time rather than quietly reinterpreted into the viewer's — reinterpreting it would put an instant back into the part of the model the period key clears.
-- **The server has no timezone.** It stores a date and an integer, and reads a clock only for those two audit stamps. No route takes an offset. The period grid is the viewer's local one, and the record is explicitly a claim about the writer's local calendar — which is what a single user with one calendar means. Multi-timezone support would need a Schedule that carries its own IANA timezone.
+- **The server has no timezone.** It stores a date and an integer, and reads a clock only for those two audit stamps. No route takes an offset. The period grid is the viewer's local one, and the record is explicitly a claim about the writer's local calendar — which is what each user's own calendar means. Multi-timezone support would need a Schedule that carries its own IANA timezone.
 - Each note belongs **immutably** to exactly one **Schedule**, and is slotted according to that Schedule's spanning period (1-hour by default; 3-hourly/6-hourly as user-defined Schedules). A note's Schedule assignment never changes after creation.
 - Notes **persist across days** — history is browsable, not reset daily, and slots ahead of now are writable as well as readable.
 - **List** answers for a **date range**, not a single day, so the frontend can fetch a window at a time as the user moves between days.
@@ -59,7 +59,7 @@ Rather than a single global granularity setting, a note is created within whiche
 - Creating a note opens a **pop-up window** for quickly capturing markdown text.
 - **Existing notes are editable.** The app encourages *new note, right now* — the create button always writes into the current slot — but a user who comes back at 3:20pm to correct or clarify the note they wrote in the 12pm–3pm window can do so. Editing changes **content only**: the period is the address, so moving a note to a different slot or Schedule is not forbidden but unspellable. Expand now, tighten later if it proves to need it.
 - **An accidental note leaves no trace, and tidying up is never the user's job.** In Obsidian a mis-pressed `Ctrl+N` leaves an `Untitled` file to go and delete by hand — a chore the tool created, handed to the user, for something they did not mean to do. Nothing is written until there is something to write, clearing a note is saved like any other change so changing your mind sticks without a confirmation step, and the record goes when the dialog closes. There is no *Untitled* to find and no list of empties to work through: **the user never performs housekeeping the app could have avoided creating.** Where a rule costs an extra request or a little more code, that is what it buys.
-- **First-run experience**: a new Instance has no Schedules yet, so the landing page prompts the user to create one. Flow: open the app for the first time → create a Schedule → start taking notes.
+- **First-run experience**: a new User has no Schedules yet, so the landing page prompts the user to create one. Flow: open the app for the first time → create a Schedule → start taking notes.
 
 ## Tech Stack Notes (from video research)
 
@@ -67,12 +67,12 @@ Exploratory ideas from a tech stack video — none of these are commitments yet,
 
 - **Database**: Postgres, using its document-db (JSONB) capabilities rather than a separate NoSQL store. Worth exploring as a candidate for the persistence layer, but not decided.
 - **Deployment**: GitHub Actions for CI/CD, with a **separate pipeline per project** (backend and frontend built/deployed independently).
-- **Authentication**: Explore Keycloak as an OAuth2 provider, if/when auth support is added.
+- ~~**Authentication**: Explore Keycloak as an OAuth2 provider.~~ Decided in `UserNotes.MD`: Auth0 through standard OpenID Connect, with nothing provider-specific in code. Keycloak was rejected as a server of our own to host and patch.
 
 ## Open Questions
 
 - Long-term persistence layer for notes (file system, SQL, NoSQL, etc.) — see Postgres/JSONB note above.
-- Authentication/multi-user support — not currently in scope per `CLAUDE.md`; Keycloak is a candidate to revisit if that changes.
+- ~~Authentication/multi-user support.~~ Decided in `UserNotes.MD`: every note belongs to the user who wrote it, the API validates an OIDC access token, and another user's note is simply absent.
 - CI/CD setup — not yet configured; GitHub Actions with per-project pipelines is a candidate.
 - ~~**Concurrent edits to one note.**~~ Decided in `NoteAutosave.MD`: last-write-wins, recorded with the timestamp rules above. Optimistic concurrency is deferred to auth and multi-user, and the second tab still silently wins in the meantime.
 - **Retrieval when you don't remember *when*.** Time is currently the only index: no search, no tags, no titles. That is fine while the app is used for *right now*, and becomes the main weakness the moment the archive is worth mining. Search over note content is the obvious answer; it is not scoped yet.

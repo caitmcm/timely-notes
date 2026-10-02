@@ -4,6 +4,9 @@ import { SCHEDULES } from '../domain/schedules'
 import type { DayKey, Note, Schedule } from '../types'
 import { useScheduleNotes } from './useScheduleNotes'
 
+/** Never renewed here: the retry on 401 is notesApi's, and tested there. */
+const tokens = { token: async () => 'the-token', renew: async () => 'the-token' }
+
 const s3 = SCHEDULES[1]
 const s6 = SCHEDULES[2]
 
@@ -89,7 +92,7 @@ interface ProbeProps {
 }
 
 function Probe({ schedule, from, to }: ProbeProps) {
-  const { notesFor, isLoaded, error } = useScheduleNotes(schedule, from, to)
+  const { notesFor, isLoaded, error } = useScheduleNotes(tokens, schedule, from, to)
 
   return (
     <ul>
@@ -295,7 +298,7 @@ describe('useScheduleNotes cache edits', () => {
 
   /** Renders the day's notes as `ordinal:content`, so a replacement is distinguishable from a pair. */
   function EditProbe({ schedule, from, to }: ProbeProps) {
-    const { notesFor, applyNote, removeNote } = useScheduleNotes(schedule, from, to)
+    const { notesFor, applyNote, removeNote } = useScheduleNotes(tokens, schedule, from, to)
 
     return (
       <div>

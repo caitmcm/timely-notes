@@ -26,6 +26,8 @@ export interface WriteRequest {
 export class ApiStub {
   readonly notesRequests: URL[] = []
   readonly writes: WriteRequest[] = []
+  /** The `Authorization` header of every request any route answered, in order. */
+  readonly authorizations: (string | undefined)[] = []
 
   private notes: Record<string, WireNote[]> = { ...NOTES }
 
@@ -35,6 +37,7 @@ export class ApiStub {
 
   async install(page: Page) {
     await page.route(NOTES_ROUTE, async (route, request) => {
+      this.authorizations.push(request.headers().authorization)
       this.notesRequests.push(new URL(request.url()))
 
       await this.reply(route, (shortName, from, to) =>
@@ -42,7 +45,9 @@ export class ApiStub {
       )
     })
 
-    await page.route(NOTE_DAYS_ROUTE, async (route) => {
+    await page.route(NOTE_DAYS_ROUTE, async (route, request) => {
+      this.authorizations.push(request.headers().authorization)
+
       await this.reply(route, (shortName, from, to) =>
         noteDaysFor((this.notes[shortName] ?? []).filter((note) => inWindow(note.day, from, to))),
       )
@@ -50,6 +55,7 @@ export class ApiStub {
 
     // Behaves like the real upsert: the same address twice is one note, 201 then 200.
     await page.route(NOTE_ROUTE, async (route, request) => {
+      this.authorizations.push(request.headers().authorization)
       const { pathname } = new URL(request.url())
       const [, , , shortName, , day, period] = pathname.split('/')
       const ordinal = Number(period.slice(1))

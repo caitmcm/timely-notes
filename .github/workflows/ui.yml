@@ -30,3 +30,8 @@ jobs:
           api_location: ''
         env:
           VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+          # A production build fails if any of these is empty, so set all four as repository vars.
+          VITE_AUTH_AUTHORITY: ${{ vars.VITE_AUTH_AUTHORITY }}
+          VITE_AUTH_CLIENT_ID: ${{ vars.VITE_AUTH_CLIENT_ID }}
+          VITE_AUTH_AUDIENCE: ${{ vars.VITE_AUTH_AUDIENCE }}
+          VITE_AUTH_PROVIDER_NAME: ${{ vars.VITE_AUTH_PROVIDER_NAME }}

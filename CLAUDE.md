@@ -27,6 +27,7 @@ Backend, from `TimelyNotes.Backend/`:
 | `dotnet test` | xUnit v3 on Microsoft.Testing.Platform (pinned in `global.json`) |
 | `dotnet tool run dotnet-ef database update` | Applies migrations by hand, never at startup. → `LocalPostgres.MD` |
 | `dotnet tool run dotnet-ef migrations add <Name> --output-dir Data/Migrations` | From `TimelyNotes.API/`. |
+| `dotnet user-jwts create --audience https://api.timely-notes` | From `TimelyNotes.API/`. A Development-only token for `TimelyNotes.API.http` and curl. The first run per machine also creates the signing key in user secrets. |
 
 Frontend, from `timely-notes-ui/`:
 
@@ -35,7 +36,7 @@ Frontend, from `timely-notes-ui/`:
 | `npm run dev` / `build` / `lint` | Dev server `:5173`; build is `tsc -b` + `vite build` |
 | `npm test` | Vitest once (`test:watch` to watch) |
 | `npm run test:e2e` | Playwright, **stubbed** lane, headless — the default |
-| `npm run test:e2e:integrated` | The lane that needs the API running |
+| `npm run test:e2e:integrated` | Starts the API and an `e2e`-mode dev server itself; mints its token with `dotnet user-jwts` |
 
 `npx playwright install chromium` is a one-off before the first E2E run. Never make Playwright's
 HTML reporter the default — `show-report` blocks the terminal.
@@ -48,26 +49,30 @@ HTML reporter the default — `show-report` blocks the terminal.
 | --- | --- |
 | `Models/Schedules.cs` | Known spans `{1,3,6}`, `PeriodCountFor`, `IsValidPeriodOrdinal`, `s`-sigil parse/format. |
 | `Models/Periods.cs` | `p`-sigil parse/format. `TryParse` takes the Schedule's span first. |
-| `Models/Note.cs` | Note entity. `NoteDayCount.cs` is the per-day count projection. |
+| `Models/Note.cs` | Note entity, keyed `(UserId, ScheduleSpanHours, Day, PeriodOrdinal)`. `NoteDayCount.cs` is the per-day count projection. |
+| `Models/User.cs` | The account: `Id` (a v7 `Guid` the app mints) and the provider's `(Issuer, Subject)`. Nothing else. |
 | `Models/NoteContent.cs` | Empty-note check: `Normalise` on write, `IsReadable` on read. |
-| `Repositories/` | `INoteRepository`, its memory and Postgres implementations (both singleton), and `NoteStoreRegistration`, which picks the provider. |
+| `Auth/` | `AddNoteAuth` (`Auth0` bearer; in Development also user-jwts' `Bearer`, picked by issuer), `UserResolution` (`iss`+`sub` → `timely:user_id` claim), `UserClaims`. |
+| `Repositories/` | `INoteRepository` (`userId` first on every read and delete) and `IUserRepository`, each with memory and Postgres implementations (all singleton), and `NoteStoreRegistration`, which picks the provider for both. |
 | `Data/` | `NotesDbContext`, `NoteQueries` (both reads as `IQueryable`), the design-time factory, `Migrations/`. |
-| `Endpoints/Notes/` | FastEndpoints REPR: `Request`/`Response`/`Endpoint`/`Validator`, one type per file. |
-| `Program.cs` | Registers `TimeProvider.System`; handlers take the clock from it. |
-| `TimelyNotes.API.http` | Sample requests for every route, including invalid ones. |
+| `Endpoints/Notes/` | FastEndpoints REPR: `Request`/`Response`/`Endpoint`/`Validator`, one type per file. Each request binds `UserId` with `[FromClaim]`. |
+| `Program.cs` | Registers `TimeProvider.System` and `AddNoteAuth`; `UseAuthentication`/`UseAuthorization` run before FastEndpoints. |
+| `TimelyNotes.API.http` | Sample requests for every route, including invalid ones. Needs a `dotnet user-jwts` token. |
 
 **Frontend — `timely-notes-ui/src/`**
 
 | Where | What |
 | --- | --- |
-| `App.tsx` | Holds all app state (Schedule, `anchorDay`, `selected`, `calendarMonth`) and the domain calls. Components below it don't fetch. |
+| `main.tsx`, `AuthGate.tsx` | `AuthBoundary` › `AuthGate`, which renders nothing while loading, `SignInScreen` signed out, `App` signed in. |
+| `auth/` | `AuthBoundary` (picks `oidc` or `static` by `VITE_AUTH_MODE`), `useAuth` (`status`, `email`, `tokens: TokenSource`, `signIn`/`signUp`/`signOut`), `oidc.ts` (`UserManager` settings), `buildGuard.ts` (run by `vite.config.ts`). |
+| `App.tsx` | Holds all app state (Schedule, `anchorDay`, `selected`, `calendarMonth`) and the domain calls, and hands `tokens` to every one. Components below it don't fetch. |
 | `hooks/useNoteAutosave.ts` | Autosave: debounce, max wait, dirty check, in-flight guard, save status. |
 | `hooks/` | `useNow` (only clock read), `useScheduleNotes` (only note fetch), `useNoteDays` (calendar markers). |
 | `domain/` | Pure time logic: `schedules`, `periods`, `notes`, `days`, `months`, `window`. No React, no fetch. |
 | `types/index.ts` | `DayKey`, `Note`, `Schedule`, `Period`, `SpanHours`. |
-| `api/notesApi.ts` | `fetch` wrapper; every call takes a required `AbortSignal`. |
-| `components/` | `MenuDrawer`, `SchedulePicker`, `ScheduleView`, `DaySection`, `PeriodRow`, `NoteDialog`, `NoteEditor`, `CalendarDialog`, `MonthGrid`, `icons`. |
-| `e2e/` | Playwright: `fixtures/app.ts` (extended `test` and `ApiStub`), `fixtures/ScheduleView.ts` (page object). `stubbed`: `api-contract`, `calendar`, `layout`, `menu`, `note-dialog`, `window`. `integrated`: `backend`. |
+| `api/notesApi.ts` | `fetch` wrapper; every call takes a `TokenSource` first and a required `AbortSignal`, and retries once after a renew on `401`. |
+| `components/` | `SignInScreen`, `MenuDrawer`, `SchedulePicker`, `ScheduleView`, `DaySection`, `PeriodRow`, `NoteDialog`, `NoteEditor`, `CalendarDialog`, `MonthGrid`, `icons`. |
+| `e2e/` | Playwright: `fixtures/app.ts` (extended `test` and `ApiStub`), `fixtures/ScheduleView.ts` (page object), `fixtures/mintToken.ts` (the integrated lane's user-jwts token). `stubbed`: `api-contract`, `calendar`, `layout`, `menu`, `note-dialog`, `window`. `integrated`: `backend`. |
 
 Tests sit beside the code they cover (`*.test.ts(x)`); backend test folders mirror the API's layout.
 
@@ -118,16 +123,26 @@ feature document named.
 - `PUT …/notes/{day}/p{ordinal}`: `201` created, `200` replaced.
 - `DELETE …/notes/{day}/p{ordinal}`.
 
-Reads never return empty notes. The validator returns `400` for a bad Schedule, period or format.
-There is no auth, no Schedule endpoint, no custom middleware and no HTTPS redirection. The host
-handles CORS and TLS.
+Every route needs a bearer token and answers `401` without one, before validation. The user is
+the one the token names, never part of a URL or body; another user's note is simply absent, so a
+`DELETE` of it is `404`. A user is created on their first authenticated request. Tokens come from
+Auth0 (`Auth:Authority`, `Auth:Audience` in `appsettings.json`), and in Development also from
+`dotnet user-jwts`. Reads never return empty notes. The validator returns `400` for a bad
+Schedule, period or format. There is no Schedule endpoint, no custom middleware and no HTTPS
+redirection. The host handles CORS and TLS.
 
-**Stores.** `Database:Provider` selects `Memory` or `Postgres`. `Memory` is the default for CI,
-the deployed app and all tests, seeded with notes from today − 3 to today + 3. `Postgres` is
-EF Core on a local `postgresql-x64-18`, for local development only. The connection string is in
-user secrets under `ConnectionStrings:Notes`. Nothing deployed persists notes.
+**Stores.** `Database:Provider` selects `Memory` or `Postgres`, for notes and users alike.
+`Memory` is the default for CI, the deployed app and all tests; it seeds each user with notes from
+today − 3 to today + 3 on their first request. `Postgres` is EF Core on a local
+`postgresql-x64-18`, for local development only, with a `users` table that `notes.user_id`
+references. The connection string is in user secrets under `ConnectionStrings:Notes`. Nothing
+deployed persists notes or users.
 
-**Frontend.** `App` holds two separate pieces of state: `anchorDay` (the visible days,
+**Frontend.** Signed out, the app shows `SignInScreen`, whose **Sign in** and **Create account**
+both go to Auth0's hosted page (Authorization Code + PKCE through `oidc-client-ts` and
+`react-oidc-context`; session in `sessionStorage`). Sign out is in `MenuDrawer`. A
+`VITE_AUTH_MODE=static` build is always signed in with a fixed token; only `--mode e2e` may use it,
+and a production build refuses it. `App` holds two separate pieces of state: `anchorDay` (the visible days,
 `anchor ± 1`) and `selected` (the selected period). `null` means follow the clock. Only navigation
 changes `anchorDay`; `domain/window.ts` does the arithmetic. `Earlier days` and `Later days` move
 the window three days. `Go to today` appears only in `CalendarDialog` and in the notice shown when
@@ -136,10 +151,12 @@ today is off screen. The Schedule is picked in `MenuDrawer`. Editing uses `@mdxe
 instead of refetching. There is no router and no state library. `timely-notes-ui/README.md` is
 still the Vite template.
 
-**Tests.** xUnit runs against the in-memory store. Playwright has two lanes. `stubbed` runs on
-`127.0.0.1:5174` and answers every `/api/**` call from a fixture. `integrated` needs the running
-API. `stubbed` has 15 tests and `integrated` 5. `App.test.tsx` and `NoteDialog.test.tsx` mock `NoteEditor` because MDXEditor emits no change
+**Tests.** xUnit runs against the in-memory store, authenticated by an `X-Test-User` header
+scheme (`SignedInAppFixture`), so nothing needs a signing key or Auth0. Playwright has two lanes,
+both run the UI in `e2e` mode, with static auth. `stubbed` runs on `127.0.0.1:5174` and answers every
+`/api/**` call from a fixture. `integrated` starts the API and a dev server, runs serially, and
+signs in with a `dotnet user-jwts` token. `stubbed` has 15 tests and `integrated` 5. `App.test.tsx` and `NoteDialog.test.tsx` mock `NoteEditor` because MDXEditor emits no change
 events under jsdom; Playwright tests the real editor.
 
-**Next.** The docs in `feature-docs/todo/` are specified but not started. `EmptyNotePruning.MD` is
-not scheduled.
+**Next.** `UserNotes.MD` is built and tested; the `timely_notes_dev` reset and the
+by-hand Verify remain. Deployment (section 10) waits until that passes locally. `EmptyNotePruning.MD` is not scheduled.

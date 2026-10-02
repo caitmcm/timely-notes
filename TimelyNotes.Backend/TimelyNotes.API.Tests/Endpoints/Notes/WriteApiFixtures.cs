@@ -9,13 +9,14 @@ namespace TimelyNotes.API.Tests.Endpoints.Notes;
 /// An app of its own, so writes never reach the read tests' store, and a fake clock, so a
 /// server-set stamp is asserted exactly rather than as "roughly now".
 /// </summary>
-public abstract class ClockedApiFixture : AppFixture<Program>
+public abstract class ClockedApiFixture : SignedInAppFixture
 {
     public FakeTimeProvider Clock { get; } =
         new(new DateTimeOffset(2026, 8, 25, 9, 30, 0, TimeSpan.Zero));
 
     protected override void ConfigureServices(IServiceCollection services)
     {
+        base.ConfigureServices(services);
         services.RemoveAll<TimeProvider>();
         services.AddSingleton<TimeProvider>(Clock);
     }

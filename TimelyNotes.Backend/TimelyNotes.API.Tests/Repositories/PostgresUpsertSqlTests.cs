@@ -17,9 +17,16 @@ public class PostgresUpsertSqlTests
     }
 
     [Fact]
-    public void TheConflictTargetIsTheWholeAddress()
+    public void TheConflictTargetIsTheWholeAddress_LedByTheUser()
     {
-        Assert.Contains("ON CONFLICT (schedule_span_hours, day, period_ordinal) DO UPDATE", Sql);
+        Assert.Contains(
+            "ON CONFLICT (user_id, schedule_span_hours, day, period_ordinal) DO UPDATE", Sql);
+    }
+
+    [Fact]
+    public void ItInsertsTheUser()
+    {
+        Assert.Contains("INSERT INTO notes (user_id, schedule_span_hours,", Sql);
     }
 
     /// <summary>CreatedAt is honoured on the create path only — the SQL is what enforces that.</summary>

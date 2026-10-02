@@ -1,3 +1,5 @@
+using FastEndpoints;
+using TimelyNotes.API.Auth;
 using TimelyNotes.API.Models;
 
 namespace TimelyNotes.API.Endpoints.Notes;
@@ -8,6 +10,10 @@ namespace TimelyNotes.API.Endpoints.Notes;
 /// </summary>
 public class UpsertNoteRequest
 {
+    /// <summary>The caller, from the token. Never on the wire.</summary>
+    [FromClaim(UserClaims.Id)]
+    public Guid UserId { get; set; }
+
     /// <summary>
     /// <c>s1</c>, <c>s3</c> or <c>s6</c> — the Schedule's span in hours, with its sigil. Not
     /// <c>required</c>: this request has a body, so the serializer reads the DTO before the route

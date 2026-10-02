@@ -24,6 +24,10 @@ namespace TimelyNotes.API.Data.Migrations
 
             modelBuilder.Entity("TimelyNotes.API.Models.Note", b =>
                 {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
                     b.Property<int>("ScheduleSpanHours")
                         .HasColumnType("integer")
                         .HasColumnName("schedule_span_hours");
@@ -49,10 +53,49 @@ namespace TimelyNotes.API.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("modified_at");
 
-                    b.HasKey("ScheduleSpanHours", "Day", "PeriodOrdinal")
+                    b.HasKey("UserId", "ScheduleSpanHours", "Day", "PeriodOrdinal")
                         .HasName("pk_notes");
 
                     b.ToTable("notes", (string)null);
+                });
+
+            modelBuilder.Entity("TimelyNotes.API.Models.User", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Issuer")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("issuer");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("subject");
+
+                    b.HasKey("Id")
+                        .HasName("pk_users");
+
+                    b.HasAlternateKey("Issuer", "Subject")
+                        .HasName("ak_users_issuer_subject");
+
+                    b.ToTable("users", (string)null);
+                });
+
+            modelBuilder.Entity("TimelyNotes.API.Models.Note", b =>
+                {
+                    b.HasOne("TimelyNotes.API.Models.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_notes_users_user_id");
                 });
 #pragma warning restore 612, 618
         }

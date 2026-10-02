@@ -6,8 +6,11 @@ import type { ScheduleShortName } from '../types'
 interface MenuDrawerProps {
   isOpen: boolean
   selected: ScheduleShortName
+  /** From the ID token; `null` when the session carries none. */
+  email: string | null
   onChangeSchedule: (shortName: ScheduleShortName) => void
   onClose: () => void
+  onSignOut: () => void
 }
 
 /**
@@ -17,7 +20,14 @@ interface MenuDrawerProps {
  * The dialog element is the backdrop; the panel inside it holds the padding, so a click that lands
  * on the dialog itself came from outside the drawer.
  */
-function MenuDrawer({ isOpen, selected, onChangeSchedule, onClose }: MenuDrawerProps) {
+function MenuDrawer({
+  isOpen,
+  selected,
+  email,
+  onChangeSchedule,
+  onClose,
+  onSignOut,
+}: MenuDrawerProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
 
   useEffect(() => {
@@ -53,6 +63,13 @@ function MenuDrawer({ isOpen, selected, onChangeSchedule, onClose }: MenuDrawerP
         </div>
 
         <SchedulePicker selected={selected} onChange={onChangeSchedule} />
+
+        <div className="menu-drawer__account">
+          {email && <p className="menu-drawer__email">Signed in as {email}</p>}
+          <button type="button" className="menu-drawer__sign-out" onClick={onSignOut}>
+            Sign out
+          </button>
+        </div>
       </div>
     </dialog>
   )

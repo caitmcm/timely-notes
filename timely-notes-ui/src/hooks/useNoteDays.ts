@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getNoteDaysBySchedule } from '../api/notesApi'
 import { addDays } from '../domain/days'
+import type { TokenSource } from '../auth/useAuth'
 import type { DayKey, Schedule, ScheduleShortName } from '../types'
 
 const NO_COUNTS: ReadonlyMap<DayKey, number> = new Map()
@@ -25,6 +26,7 @@ const gridKey = (gridFrom: DayKey, gridTo: DayKey) => `${gridFrom}:${gridTo}`
  * change, and none at all while `enabled` is false. `gridFrom`/`gridTo` are inclusive both ends.
  */
 export function useNoteDays(
+  tokens: TokenSource,
   schedule: Schedule,
   gridFrom: DayKey,
   gridTo: DayKey,
@@ -65,7 +67,7 @@ export function useNoteDays(
 
     requested.current.add(key)
 
-    getNoteDaysBySchedule(shortName, gridFrom, addDays(gridTo, 1), inFlight)
+    getNoteDaysBySchedule(tokens, shortName, gridFrom, addDays(gridTo, 1), inFlight)
       .then((days) => {
         if (current.current !== shortName) {
           return
@@ -94,7 +96,7 @@ export function useNoteDays(
 
         setFailure({ shortName, message: `Could not load the calendar for the ${label} schedule.` })
       })
-  }, [schedule, gridFrom, gridTo, enabled])
+  }, [tokens, schedule, gridFrom, gridTo, enabled])
 
   const held = cache.shortName === schedule.shortName ? cache : null
   const days = held?.days ?? NO_COUNTS

@@ -5,7 +5,7 @@ using TimelyNotes.API.Endpoints.Notes;
 
 namespace TimelyNotes.API.Tests.Endpoints.Notes;
 
-public class ApiFixture : AppFixture<Program>;
+public class ApiFixture : SignedInAppFixture;
 
 public class GetNotesByScheduleEndpointTests(ApiFixture app) : TestBase<ApiFixture>
 {

@@ -18,15 +18,17 @@ public class PostgresNoteRepository(IDbContextFactory<NotesDbContext> contexts) 
     /// <c>201</c> from <c>200</c> without a second query.
     /// </summary>
     internal const string UpsertSql = """
-        INSERT INTO notes (schedule_span_hours, day, period_ordinal, content, created_at, modified_at)
-        VALUES ($1, $2, $3, $4, $5, $6)
-        ON CONFLICT (schedule_span_hours, day, period_ordinal) DO UPDATE
+        INSERT INTO notes (user_id, schedule_span_hours, day, period_ordinal,
+                           content, created_at, modified_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (user_id, schedule_span_hours, day, period_ordinal) DO UPDATE
             SET content = EXCLUDED.content, modified_at = EXCLUDED.modified_at
         RETURNING content, created_at, modified_at, (xmax = 0) AS created
         """;
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<Note>> GetBySchedule(
+        Guid userId,
         int scheduleSpanHours,
         DateOnly searchFrom,
         DateOnly searchTo,
@@ -35,12 +37,13 @@ public class PostgresNoteRepository(IDbContextFactory<NotesDbContext> contexts) 
         await using var db = await contexts.CreateDbContextAsync(ct);
 
         return await NoteQueries
-            .Notes(db, scheduleSpanHours, searchFrom, searchTo)
+            .Notes(db, userId, scheduleSpanHours, searchFrom, searchTo)
             .ToListAsync(ct);
     }
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<NoteDayCount>> GetDayCountsBySchedule(
+        Guid userId,
         int scheduleSpanHours,
         DateOnly searchFrom,
         DateOnly searchTo,
@@ -49,7 +52,7 @@ public class PostgresNoteRepository(IDbContextFactory<NotesDbContext> contexts) 
         await using var db = await contexts.CreateDbContextAsync(ct);
 
         return await NoteQueries
-            .DayCounts(db, scheduleSpanHours, searchFrom, searchTo)
+            .DayCounts(db, userId, scheduleSpanHours, searchFrom, searchTo)
             .ToListAsync(ct);
     }
 
@@ -61,6 +64,7 @@ public class PostgresNoteRepository(IDbContextFactory<NotesDbContext> contexts) 
         {
             Parameters =
             {
+                new NpgsqlParameter { Value = note.UserId },
                 new NpgsqlParameter { Value = note.ScheduleSpanHours },
                 new NpgsqlParameter { Value = note.Day },
                 new NpgsqlParameter { Value = note.PeriodOrdinal },
@@ -78,6 +82,7 @@ public class PostgresNoteRepository(IDbContextFactory<NotesDbContext> contexts) 
 
         var written = new Note
         {
+            UserId = note.UserId,
             ScheduleSpanHours = note.ScheduleSpanHours,
             Day = note.Day,
             PeriodOrdinal = note.PeriodOrdinal,
@@ -91,6 +96,7 @@ public class PostgresNoteRepository(IDbContextFactory<NotesDbContext> contexts) 
 
     /// <inheritdoc />
     public async Task<bool> Delete(
+        Guid userId,
         int scheduleSpanHours,
         DateOnly day,
         int periodOrdinal,
@@ -100,7 +106,8 @@ public class PostgresNoteRepository(IDbContextFactory<NotesDbContext> contexts) 
 
         var deleted = await db.Notes
             .Where(note =>
-                note.ScheduleSpanHours == scheduleSpanHours
+                note.UserId == userId
+                && note.ScheduleSpanHours == scheduleSpanHours
                 && note.Day == day
                 && note.PeriodOrdinal == periodOrdinal)
             .ExecuteDeleteAsync(ct);

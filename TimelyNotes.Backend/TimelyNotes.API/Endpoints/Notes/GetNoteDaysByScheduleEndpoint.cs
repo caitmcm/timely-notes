@@ -9,7 +9,6 @@ public class GetNoteDaysByScheduleEndpoint(INoteRepository notes)
     public override void Configure()
     {
         Get("api/schedules/{schedule}/note-days");
-        AllowAnonymous();
         Summary(s =>
         {
             s.Summary = "Counts a Schedule's notes per day, for painting a calendar.";
@@ -24,7 +23,7 @@ public class GetNoteDaysByScheduleEndpoint(INoteRepository notes)
     {
         // The Schedule parses and both bounds are non-null: the validator runs first.
         var counts = await notes.GetDayCountsBySchedule(
-            req.ScheduleSpanHours, req.SearchFrom!.Value, req.SearchTo!.Value, ct);
+            req.UserId, req.ScheduleSpanHours, req.SearchFrom!.Value, req.SearchTo!.Value, ct);
 
         await Send.OkAsync(
             [.. counts.Select(count => new NoteDayResponse { Day = count.Day, Count = count.Count })],

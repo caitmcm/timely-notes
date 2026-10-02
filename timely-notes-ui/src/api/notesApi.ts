@@ -1,5 +1,6 @@
 import { toDayKey } from '../domain/days'
 import { formatPeriodAddress } from '../domain/periods'
+import type { TokenSource } from '../auth/useAuth'
 import type { DayKey, Note, ScheduleShortName } from '../types'
 
 /**
@@ -8,6 +9,34 @@ import type { DayKey, Note, ScheduleShortName } from '../types'
  */
 function apiBaseUrl(): string {
   return (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '')
+}
+
+interface AuthorizedInit {
+  method?: string
+  headers?: Record<string, string>
+  body?: string
+  signal?: AbortSignal
+}
+
+/**
+ * `fetch` with a bearer token. A `401` renews once and retries once; a second `401` is returned
+ * for the caller to throw on, and a failed renewal rejects as is.
+ */
+async function authorizedFetch(
+  tokens: TokenSource,
+  url: string,
+  init: AuthorizedInit,
+): Promise<Response> {
+  const send = (token: string) =>
+    fetch(url, { ...init, headers: { ...init.headers, Authorization: `Bearer ${token}` } })
+
+  const response = await send(await tokens.token())
+
+  if (response.status !== 401) {
+    return response
+  }
+
+  return send(await tokens.renew())
 }
 
 /** Mirrors the API's `NoteResponse`. */
@@ -34,6 +63,7 @@ function toNote(response: NoteResponse): Note {
  * wider than 7 days. `signal` is required so a request can't outlive its effect.
  */
 export async function getNotesBySchedule(
+  tokens: TokenSource,
   shortName: ScheduleShortName,
   searchFrom: DayKey,
   searchTo: DayKey,
@@ -41,9 +71,11 @@ export async function getNotesBySchedule(
 ): Promise<Note[]> {
   const query = new URLSearchParams({ searchFrom, searchTo })
 
-  const response = await fetch(`${apiBaseUrl()}/api/schedules/${shortName}/notes?${query}`, {
-    signal,
-  })
+  const response = await authorizedFetch(
+    tokens,
+    `${apiBaseUrl()}/api/schedules/${shortName}/notes?${query}`,
+    { signal },
+  )
 
   if (!response.ok) {
     throw new Error(`Failed to load notes for schedule ${shortName}: ${response.status}`)
@@ -67,13 +99,14 @@ function noteUrl(shortName: ScheduleShortName, day: DayKey, ordinal: number): st
  * the client has no create-or-update branch and a repeat is harmless.
  */
 export async function saveNote(
+  tokens: TokenSource,
   shortName: ScheduleShortName,
   day: DayKey,
   ordinal: number,
   content: string,
   signal: AbortSignal,
 ): Promise<Note> {
-  const response = await fetch(noteUrl(shortName, day, ordinal), {
+  const response = await authorizedFetch(tokens, noteUrl(shortName, day, ordinal), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ content }),
@@ -92,12 +125,16 @@ export async function saveNote(
  * closing delete is issued *as* its caller is torn down, and a signal would cancel it.
  */
 export async function deleteNote(
+  tokens: TokenSource,
   shortName: ScheduleShortName,
   day: DayKey,
   ordinal: number,
   signal?: AbortSignal,
 ): Promise<void> {
-  const response = await fetch(noteUrl(shortName, day, ordinal), { method: 'DELETE', signal })
+  const response = await authorizedFetch(tokens, noteUrl(shortName, day, ordinal), {
+    method: 'DELETE',
+    signal,
+  })
 
   // A 404 is the outcome asked for: the note is already gone.
   if (!response.ok && response.status !== 404) {
@@ -121,6 +158,7 @@ export interface NoteDay {
  * window wider than 42 days. Days with no notes are absent rather than zero.
  */
 export async function getNoteDaysBySchedule(
+  tokens: TokenSource,
   shortName: ScheduleShortName,
   searchFrom: DayKey,
   searchTo: DayKey,
@@ -128,9 +166,11 @@ export async function getNoteDaysBySchedule(
 ): Promise<NoteDay[]> {
   const query = new URLSearchParams({ searchFrom, searchTo })
 
-  const response = await fetch(`${apiBaseUrl()}/api/schedules/${shortName}/note-days?${query}`, {
-    signal,
-  })
+  const response = await authorizedFetch(
+    tokens,
+    `${apiBaseUrl()}/api/schedules/${shortName}/note-days?${query}`,
+    { signal },
+  )
 
   if (!response.ok) {
     throw new Error(`Failed to load note days for schedule ${shortName}: ${response.status}`)

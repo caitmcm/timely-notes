@@ -3,6 +3,7 @@ using FastEndpoints.Testing;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using TimelyNotes.API.Repositories;
 using TimelyNotes.API.Tests.Endpoints.Notes;
 
 namespace TimelyNotes.API.Tests;
@@ -22,8 +23,10 @@ public class ProgramTests(ApiFixture app) : TestBase<ApiFixture>
 /// <summary>Swagger is mapped in Development only, which no other fixture runs as.</summary>
 public class DevelopmentApiFixture : AppFixture<Program>
 {
-    protected override void ConfigureApp(IWebHostBuilder builder) =>
-        builder.UseEnvironment(Environments.Development);
+    // Development's settings choose Postgres, and CI has no connection string.
+    protected override void ConfigureApp(IWebHostBuilder builder) => builder
+        .UseEnvironment(Environments.Development)
+        .UseSetting(NoteStoreRegistration.ProviderKey, nameof(NoteStore.Memory));
 }
 
 public class DevelopmentProgramTests(DevelopmentApiFixture app) : TestBase<DevelopmentApiFixture>

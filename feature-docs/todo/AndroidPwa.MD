@@ -42,7 +42,7 @@ Following TDD (per `CLAUDE.md`): write a failing test before each piece of code 
    share-target, offline and private on-device storage (IndexedDB, OPFS) are all web features
    there, so none of them is a reason. Writing user-visible files into shared storage is one,
    because Chrome on Android has no File System Access API. Obsidian's model, a watched folder of
-   markdown, needs exactly that (`IDEAS.MD`, _A mobile app that keeps notes as files_).
+   markdown, needs exactly that. That idea is a separate application, kept outside this repo.
 
 2. **No service worker.** Since Chrome 108 on Android, a site with a valid manifest can be
    installed from the menu (⋮ → _Install app_) without one. A service worker brings a caching and
@@ -284,7 +284,5 @@ On an Android phone, once, by hand. This is not a test lane:
 - **`localStorage` for browser tabs too.** It would need a guard against two tabs rotating one
   refresh token (decision 4), or Auth0's reuse interval set above zero.
 - **Web push and `share_target`**, both available to an installed PWA on Android.
-- **A mobile app that keeps notes as files, the Obsidian way** (`IDEAS.MD`). It is a separate
-  architecture: Capacitor, a device folder, no API.
 
 ## Implementation notes

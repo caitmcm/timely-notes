@@ -15,43 +15,40 @@ Open:
   down in `feature-docs/done/`.
 - Whether it is a one-off pass over the current UI or something to keep installed.
 
-## A mobile interface
+## A mobile app that keeps notes as files, the Obsidian way
 
-The intention: Timely Notes usable on a phone. The period grid is a glance-and-jot interface and
-the phone is where the glancing happens. Everything below is implementation detail underneath that
-sentence — the idea is not tied to any particular library, and Expo, which is where this started,
-turns out not to be the shape of it.
+A second architecture, alongside the current one rather than replacing it:
 
-Two separable pieces, worth keeping apart because only one of them is a feature:
+| | Pieces | Runs as | Store | Sign-in |
+| --- | --- | --- | --- | --- |
+| **Current** | Web UI + API | A desktop browser, or a PWA installed on the phone (`AndroidPwa.MD`) | Postgres in the cloud | Auth0 |
+| **Mobile** | A bundled APK (Capacitor), no API | An app installed on the phone | Markdown files in a folder on the device | The device's own lock |
 
-**1. The interface itself.** This is design work and a real specification when it comes. `App.css`
-has no `@media` rule anywhere; the layout is rem-based and the dialogs are `width: min(…, 92vw)`,
-so it likely narrows without breaking, but nothing has been designed for a small screen or for a
-finger. Open: whether three day sections still make sense on a phone or the focus day carries it
-alone; whether the toolbar survives a narrow viewport; hit sizes on `PeriodRow`; `@mdxeditor/editor`
-against a phone keyboard, which is the piece most likely to force a decision; and what replaces the
-Playwright lane's desktop viewport — its device emulation is the cheap first answer.
+**The mobile app works like Obsidian.**
+- Notes are plain markdown files in a folder the user chooses.
+- The app reads and writes them with filesystem operations, and watches the folder for changes
+  made by anything else.
+- Moving notes between devices is the job of whatever syncs the folder, such as Syncthing, a cloud
+  drive or Obsidian Sync.
+- The app never talks to the API.
 
-**2. Getting it onto the home screen.** A deployment step, downstream of the build that already
-exists, changing nothing about desktop development: `run-dev.ps1`, the Vite dev proxy, Vitest and
-Playwright all stay as they are. On Android an installed PWA is the whole of it — Chrome offers to
-install, a WebAPK gives it a launcher icon and a task-switcher entry, and it runs without browser
-chrome. That is two files in `timely-notes-ui/public/` (a manifest with icons and
-`display: "standalone"`, and a service worker) plus a `<link>` in `index.html`; none of it exists
-today, and the SWA already serves the HTTPS it requires. Expo is a fallback to reopen only for
-something a PWA cannot do — a store listing, push notifications, native share — and even then the
-shape would be a WebView around the deployed URL, since a React Native port means replacing every
-component and the markdown editor.
+**Why Capacitor.** A web page on Android cannot write files that other apps can see: Chrome there
+has no File System Access API, and a PWA's own storage (IndexedDB, OPFS) is invisible to other
+apps. Capacitor's `Filesystem` plugin can. Obsidian's mobile app is built on Capacitor.
 
-Open on the second piece:
+**Device authentication signs the user in.** The phone's lock screen is the authentication, so
+there is no account and no Auth0.
 
-- Icons. `public/favicon.svg` is all there is; a manifest wants raster sizes and a maskable one.
-- What the service worker caches, and what it must never cache. Hashed Vite assets are safe;
-  `/api` responses are not — a stale note list is worse than an error.
-- Offline. Cached assets mean it launches with no signal, but every note comes from the API, so
-  what an offline launch shows is undecided, and is really a question for `NoteAutosave`.
-- Backgrounding. `useNow`, `dayKeyOf(now)` and the device timezone hold as written, but waking a
-  backgrounded installed app is a longer, rougher resync than tab visibility.
+Open:
 
-The interface is the part with the value and can be built and tested on the desktop, at a narrow
-viewport, before anything is installed anywhere. The install is small and can follow.
+- **Code shared with `timely-notes-ui`.** The two could share the grid, the dialogs, autosave and
+  `domain/`, with each build choosing its own store. Or the mobile app could be a project of its
+  own.
+- **Watching on Android.** The `Filesystem` plugin reads and writes but does not watch. The options
+  are polling, rescanning on resume, or a native plugin.
+- **The file layout.**
+  - A note's address `(Schedule, Day, PeriodOrdinal)` maps onto a path such as
+    `s3/2026-09-05/p4.md`.
+  - The open part is what the app does with a file that doesn't fit the layout.
+- **An app-level lock.** It could rely on the phone's lock screen alone, or also ask for a
+  biometric or PIN prompt when it opens, through a plugin.

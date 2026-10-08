@@ -159,5 +159,5 @@ signs in with a `dotnet user-jwts` token. `stubbed` has 15 tests and `integrated
 events under jsdom; Playwright tests the real editor.
 
 **Next.** `UserNotes.MD` and `DeployedEnvironment.MD` are done: the deployed app signs in through
-Auth0 and keeps notes in Neon. `NowOnTheGrid.MD` is specified and not started.
+Auth0 and keeps notes in Neon. `NowOnTheGrid.MD` and `AndroidPwa.MD` are specified and not started.
 `EmptyNotePruning.MD` is not scheduled.

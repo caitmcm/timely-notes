@@ -13,6 +13,8 @@
   --accent: light-dark(#b8860b, #e3b341);
   --accent-tint: light-dark(#fdf6e0, #2c2513);
   --danger: light-dark(#a4262c, #f1707a);
+  --now: light-dark(#2563eb, #6ea8fe);
+  --now-tint: light-dark(#ebf2fe, #18233a);
   --day-height: 42rem;
   --gutter: 4.25rem;
 }
@@ -189,6 +191,7 @@
 }
 
 .day-section__periods {
+  position: relative;
   height: var(--day-height);
   margin: 0;
   padding: 0;
@@ -240,6 +243,40 @@
 .period-row--selected .period-row__time {
   color: var(--ink);
   font-weight: 600;
+}
+
+/* Now and selection touch different properties, so a selected current row shows both. Only the
+   background is shared, and selection keeps it. */
+.period-row[aria-current='time']:not(.period-row--selected) {
+  background: var(--now-tint);
+}
+
+.period-row[aria-current='time'] .period-row__time {
+  color: var(--now);
+  font-weight: 600;
+}
+
+/* Placed as a share of the column, which the rows divide equally; above them, under the heading. */
+.now-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(var(--now-fraction) * 100%);
+  height: 2px;
+  margin-top: -1px;
+  background: var(--now);
+  pointer-events: none;
+}
+
+.now-line__dot {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: var(--now);
+  transform: translateY(-50%);
 }
 
 .period-row__note {

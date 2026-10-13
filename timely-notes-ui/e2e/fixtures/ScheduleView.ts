@@ -161,6 +161,16 @@ export class DayScope {
     return this.root.getByRole('option', { selected: true })
   }
 
+  /** The row the clock is in, whatever is selected. */
+  get currentRow(): Locator {
+    return this.root.locator('[role="option"][aria-current="time"]')
+  }
+
+  /** Hidden from assistive technology, so reached by class rather than by role. */
+  get nowLine(): Locator {
+    return this.root.locator('.now-line')
+  }
+
   get noteButton(): Locator {
     return this.root.getByRole('button', { name: 'Note', exact: true })
   }

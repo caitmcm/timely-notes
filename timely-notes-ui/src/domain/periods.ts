@@ -2,6 +2,7 @@ import { dayKeyOf } from './days'
 import type { DayKey, Note, Period, SpanHours } from '../types'
 
 const HOURS_IN_DAY = 24
+const MINUTES_IN_HOUR = 60
 
 const pad = (value: number) => String(value).padStart(2, '0')
 
@@ -18,13 +19,22 @@ export function ordinalOf(at: Date, spanHours: SpanHours): number {
   return Math.floor(at.getHours() / spanHours) + 1
 }
 
+/** How far through its own day the instant is: 0 at 00:00, just under 1 at 23:59. */
+export function dayFractionOf(at: Date): number {
+  return (at.getHours() * MINUTES_IN_HOUR + at.getMinutes()) / (HOURS_IN_DAY * MINUTES_IN_HOUR)
+}
+
+export function isCurrentDay(day: DayKey, now: Date): boolean {
+  return day === dayKeyOf(now)
+}
+
 export function isCurrentPeriod(
   period: Period,
   day: DayKey,
   now: Date,
   spanHours: SpanHours,
 ): boolean {
-  return day === dayKeyOf(now) && period.ordinal === ordinalOf(now, spanHours)
+  return isCurrentDay(day, now) && period.ordinal === ordinalOf(now, spanHours)
 }
 
 /** `undefined` when `now` is not on `day`. */

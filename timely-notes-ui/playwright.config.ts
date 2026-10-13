@@ -53,7 +53,10 @@ export default defineConfig({
           cwd: '../TimelyNotes.Backend',
           // The notes routes need query parameters, so Swagger is the only bare-GET readiness URL.
           url: 'http://localhost:5186/swagger/index.html',
-          reuseExistingServer: true,
+          // The specs read the in-memory seed; Development otherwise picks Postgres. Never a running
+          // API, which would be on whatever store it was started with.
+          env: { Database__Provider: 'Memory' },
+          reuseExistingServer: false,
           timeout: 180_000,
         },
         {

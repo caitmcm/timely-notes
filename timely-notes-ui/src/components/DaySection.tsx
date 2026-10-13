@@ -1,6 +1,7 @@
 import { useEffect, useRef, type Ref } from 'react'
-import { formatDayHeading, isCurrentPeriod } from '../domain/periods'
+import { dayFractionOf, formatDayHeading, isCurrentDay, isCurrentPeriod } from '../domain/periods'
 import type { DayKey, Period, SpanHours } from '../types'
+import NowLine from './NowLine'
 import PeriodRow from './PeriodRow'
 
 interface DaySectionProps {
@@ -68,6 +69,8 @@ function DaySection({
             />
           )
         })}
+
+        {isCurrentDay(day, now) && <NowLine fraction={dayFractionOf(now)} />}
       </ul>
     </section>
   )

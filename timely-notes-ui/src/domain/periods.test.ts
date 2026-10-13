@@ -1,16 +1,19 @@
 import {
   assignNotes,
   buildPeriods,
+  dayFractionOf,
   findCurrentPeriod,
   formatDayHeading,
   formatPeriodAddress,
   formatTimeOfDay,
   formatPeriodLabel,
   formatPeriodStart,
+  isCurrentDay,
   isCurrentPeriod,
   ordinalOf,
 } from './periods'
-import { toDayKey } from './days'
+import { dayKeyOf, toDayKey } from './days'
+import { EITHER_SIDE_OF_GREENWICH, inTimezone } from '../test/timezone'
 import type { Note, SpanHours } from '../types'
 
 const day = toDayKey
@@ -66,6 +69,42 @@ describe('ordinalOf', () => {
     expect(ordinalOf(new Date(2026, 7, 25, 9, 30), 3)).toBe(4)
     expect(ordinalOf(new Date(2026, 7, 25, 9, 30), 1)).toBe(10)
     expect(ordinalOf(new Date(2026, 7, 25, 9, 30), 6)).toBe(2)
+  })
+})
+
+describe('dayFractionOf', () => {
+  it('is 0 at midnight, a half at noon, and just under 1 at 23:59', () => {
+    expect(dayFractionOf(new Date(2026, 7, 25, 0, 0))).toBe(0)
+    expect(dayFractionOf(new Date(2026, 7, 25, 12, 0))).toBe(0.5)
+
+    const lastMinute = dayFractionOf(new Date(2026, 7, 25, 23, 59))
+
+    expect(lastMinute).toBeLessThan(1)
+    expect(lastMinute).toBeGreaterThan(0.99)
+  })
+
+  it('counts minutes, not periods, and takes no span', () => {
+    expect(dayFractionOf(new Date(2026, 7, 25, 20, 40))).toBeGreaterThan(
+      dayFractionOf(new Date(2026, 7, 25, 20, 20)),
+    )
+    expect(dayFractionOf).toHaveLength(1)
+  })
+
+  it.each(EITHER_SIDE_OF_GREENWICH)('reads local fields, not UTC ones, in %s', (zone) => {
+    inTimezone(zone, () => {
+      expect(dayFractionOf(new Date(2026, 8, 5, 6, 0))).toBe(0.25)
+      expect(dayFractionOf(new Date(2026, 8, 5, 18, 0))).toBe(0.75)
+    })
+  })
+})
+
+describe('isCurrentDay', () => {
+  const now = new Date(2026, 7, 25, 20, 20)
+
+  it('is true for the day the clock is on, and false for its neighbours', () => {
+    expect(isCurrentDay(dayKeyOf(now), now)).toBe(true)
+    expect(isCurrentDay(day('2026-08-24'), now)).toBe(false)
+    expect(isCurrentDay(day('2026-08-26'), now)).toBe(false)
   })
 })
 

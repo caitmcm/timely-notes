@@ -122,6 +122,12 @@ const row = (dayOfMonth: number, name: string) =>
 
 const headings = () => screen.getAllByRole('listbox').map((list) => list.getAttribute('aria-label'))
 
+/** The day each rendered now line sits on. */
+const nowLineDays = () =>
+  [...document.querySelectorAll('.now-line')].map(
+    (line) => line.closest<HTMLElement>('[data-day]')?.dataset.day,
+  )
+
 /** The notice, which comes and goes with the window — and carries the way back with it. */
 const rolloverNotice = () => screen.queryByText(/^Viewing /)
 
@@ -493,6 +499,15 @@ describe('App — live clock', () => {
     expect(bounds(requests(fetchMock)[1])).toEqual(['2026-08-27', '2026-08-28'])
   })
 
+  it('moves the now line to the new day over midnight, leaving none on the day just ended', async () => {
+    await mountAt(onThe25th(23, 59))
+    expect(nowLineDays()).toEqual(['2026-08-25'])
+
+    await advance(2 * 60_000)
+
+    expect(nowLineDays()).toEqual(['2026-08-26'])
+  })
+
   // The selection stops following the clock; the window, which the press never touched, does not.
   it('carries the window over midnight while the selected row stays behind', async () => {
     const fetchMock = await mountAt(onThe25th(23, 59))
@@ -710,6 +725,20 @@ describe('App — calendar navigation', () => {
     await screen.findByRole('option', { selected: true })
 
     expect(headings()).toEqual(['24/08/2026', '25/08/2026', '26/08/2026'])
+  })
+
+  it('draws one now line across the three days, and none once the calendar has gone elsewhere', async () => {
+    stubApi()
+    renderApp()
+    await screen.findByRole('option', { selected: true })
+
+    expect(nowLineDays()).toEqual(['2026-08-25'])
+
+    await openCalendar()
+    await userEvent.click(screen.getByRole('button', { name: 'Previous month' }))
+    await userEvent.click(screen.getByRole('button', { name: '15' }))
+
+    expect(nowLineDays()).toEqual([])
   })
 
   it('requests no counts until the calendar is opened', async () => {

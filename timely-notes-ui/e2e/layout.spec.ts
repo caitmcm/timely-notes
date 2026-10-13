@@ -110,3 +110,77 @@ test.describe('on a viewport too short to show the selected row', () => {
     expect(rowBox.y + rowBox.height).toBeLessThanOrEqual(scroller.y + scroller.height + TOLERANCE)
   })
 })
+
+/** The vertical middle of a box: the line is a couple of pixels thick, and its middle is the minute. */
+const middleOf = async (locator: Locator) => {
+  const box = (await locator.boundingBox())!
+
+  return box.y + box.height / 2
+}
+
+for (const schedule of ['1h', '3h', '6h']) {
+  test(`draws the now line inside the current row at ${schedule}`, async ({ scheduleView }) => {
+    const day = scheduleView.day(FOCUS)
+
+    await scheduleView.openMenu()
+    await scheduleView.schedule(schedule).click()
+
+    const row = (await day.currentRow.boundingBox())!
+    const line = await middleOf(day.nowLine)
+
+    expect(line).toBeGreaterThan(row.y)
+    expect(line).toBeLessThan(row.y + row.height)
+  })
+}
+
+test('moves the now line down by the share of the day that half an hour is', async ({
+  page,
+  scheduleView,
+}) => {
+  const day = scheduleView.day(FOCUS)
+  const before = await middleOf(day.nowLine)
+  const column = await heightOf(day.periodList)
+
+  await page.clock.runFor(30 * 60_000)
+
+  await expect
+    .poll(async () => (await middleOf(day.nowLine)) - before)
+    .toBeGreaterThan(0)
+  const moved = (await middleOf(day.nowLine)) - before
+
+  expect(Math.abs(moved - (column * 30) / (24 * 60))).toBeLessThan(1.5)
+})
+
+/** The gutter time's weight, and the row's background. */
+const markOf = (row: Locator) =>
+  row.evaluate((element) => ({
+    weight: Number(getComputedStyle(element.querySelector('.period-row__time')!).fontWeight),
+    background: getComputedStyle(element).backgroundColor,
+  }))
+
+test('marks the current row by more than colour, and keeps it marked when another is selected', async ({
+  scheduleView,
+}) => {
+  const day = scheduleView.day(FOCUS)
+  const current = day.row('18:00 – 21:00')
+  const other = day.row('06:00 – 09:00')
+  const plain = day.row('00:00 – 03:00')
+
+  await expect(day.currentRow).toHaveAccessibleName('18:00 – 21:00')
+  const selectedBackground = (await markOf(current)).background
+
+  await other.click()
+  await expect(other).toHaveAttribute('aria-selected', 'true')
+
+  // Selection moved, and the current row still stands out from a row that is neither.
+  await expect(current).toHaveAttribute('aria-current', 'time')
+  const marked = await markOf(current)
+  const unmarked = await markOf(plain)
+
+  expect(marked.weight).toBeGreaterThan(unmarked.weight)
+  expect(marked.background).not.toBe(unmarked.background)
+  // …while the selected row keeps the selection's own background, not the now tint.
+  expect((await markOf(other)).background).toBe(selectedBackground)
+  expect(marked.background).not.toBe(selectedBackground)
+  await expect(day.nowLine).toBeVisible()
+})

@@ -71,7 +71,7 @@ HTML reporter the default — `show-report` blocks the terminal.
 | `domain/` | Pure time logic: `schedules`, `periods`, `notes`, `days`, `months`, `window`. No React, no fetch. |
 | `types/index.ts` | `DayKey`, `Note`, `Schedule`, `Period`, `SpanHours`. |
 | `api/notesApi.ts` | `fetch` wrapper; every call takes a `TokenSource` first and a required `AbortSignal`, and retries once after a renew on `401`. |
-| `components/` | `SignInScreen`, `MenuDrawer`, `SchedulePicker`, `ScheduleView`, `DaySection`, `PeriodRow`, `NoteDialog`, `NoteEditor`, `CalendarDialog`, `MonthGrid`, `icons`. |
+| `components/` | `SignInScreen`, `MenuDrawer`, `SchedulePicker`, `ScheduleView`, `DaySection`, `PeriodRow`, `NowLine`, `NoteDialog`, `NoteEditor`, `CalendarDialog`, `MonthGrid`, `icons`. |
 | `e2e/` | Playwright: `fixtures/app.ts` (extended `test` and `ApiStub`), `fixtures/ScheduleView.ts` (page object), `fixtures/mintToken.ts` (the integrated lane's user-jwts token). `stubbed`: `api-contract`, `calendar`, `layout`, `menu`, `note-dialog`, `window`. `integrated`: `backend`. |
 
 Tests sit beside the code they cover (`*.test.ts(x)`); backend test folders mirror the API's layout.
@@ -98,7 +98,7 @@ Per `feature-docs/WORKFLOW.MD` — one feature, one document, end to end:
 
 ## Invariants
 
-Eleven rules nothing in the build enforces, where the wrong version looks reasonable. Every other
+Twelve rules nothing in the build enforces, where the wrong version looks reasonable. Every other
 constraint is held by a type or by a named test — those are not restated here. Reasoning is in the
 feature document named.
 
@@ -113,6 +113,7 @@ feature document named.
 - **Selecting a period never moves the window.** `anchorDay` and `selected` are separate state; only navigation writes the anchor. → `DayWindowNavigation.MD`
 - **`Note now` opens on the current period, never on the selection** — it clears both, then waits for the day to load rather than opening on an unloaded one. → `MenuAndNoteNow.MD`
 - **A dialog that unmounts on close restores focus itself, from an effect** — `<dialog>`'s own restore never runs, and a handler is too early: on Escape the browser's close sequence lands last. → `MenuAndNoteNow.MD`
+- **The now line is placed as a fraction of the day column, never from measured layout, and ticks off `useNow` alone** — no second clock and no second timer. → `NowOnTheGrid.MD`
 
 ## Current state
 
@@ -146,7 +147,9 @@ and a production build refuses it. `App` holds two separate pieces of state: `an
 `anchor ± 1`) and `selected` (the selected period). `null` means follow the clock. Only navigation
 changes `anchorDay`; `domain/window.ts` does the arithmetic. `Earlier days` and `Later days` move
 the window three days. `Go to today` appears only in `CalendarDialog` and in the notice shown when
-today is off screen. The Schedule is picked in `MenuDrawer`. Editing uses `@mdxeditor/editor` in
+today is off screen. The current period is marked in blue (gutter time, and a tint unless selected),
+and a blue line crosses today at the current minute, moving with `useNow`; neither scrolls the view.
+The Schedule is picked in `MenuDrawer`. Editing uses `@mdxeditor/editor` in
 `NoteDialog`, saved by `useNoteAutosave`; `App` updates `useScheduleNotes`'s cache after each write
 instead of refetching. There is no router and no state library. `timely-notes-ui/README.md` is
 still the Vite template.
@@ -155,9 +158,9 @@ still the Vite template.
 scheme (`SignedInAppFixture`), so nothing needs a signing key or Auth0. Playwright has two lanes,
 both run the UI in `e2e` mode, with static auth. `stubbed` runs on `127.0.0.1:5174` and answers every
 `/api/**` call from a fixture. `integrated` starts the API and a dev server, runs serially, and
-signs in with a `dotnet user-jwts` token. `stubbed` has 15 tests and `integrated` 5. `App.test.tsx` and `NoteDialog.test.tsx` mock `NoteEditor` because MDXEditor emits no change
+signs in with a `dotnet user-jwts` token. `stubbed` has 20 tests and `integrated` 5. `integrated` pins its API to the `Memory` store and never reuses a running one. `App.test.tsx` and `NoteDialog.test.tsx` mock `NoteEditor` because MDXEditor emits no change
 events under jsdom; Playwright tests the real editor.
 
 **Next.** `UserNotes.MD` and `DeployedEnvironment.MD` are done: the deployed app signs in through
-Auth0 and keeps notes in Neon. `NowOnTheGrid.MD` and `AndroidPwa.MD` are specified and not started.
+Auth0 and keeps notes in Neon. `NowOnTheGrid.MD` is done. `AndroidPwa.MD` is specified and not started.
 `EmptyNotePruning.MD` is not scheduled.
